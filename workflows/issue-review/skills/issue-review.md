@@ -47,12 +47,16 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 ## Phase 1: Fetch Context
 
-1. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
+1. Record session start time:
+   ```bash
+   START_TIME=$(date +%s)
+   ```
+2. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
    - Find the PR URL in ticket comments (look for `## Fix Applied` comment
      from the fix agent — this is a cross-workflow contract)
    - Extract PR number and repo from the URL
    - Count existing `## Agent Code Review` comments to determine cycle N
-2. If no PR URL found:
+3. If no PR URL found:
    - Atomic label swap using `mcp__atlassian__editJiraIssue`:
      remove `bot-ready-for-review`, add `bot-fix-failed`
    - Add comment: "No PR found in ticket comments."
@@ -288,7 +292,24 @@ If any check fails, either remove the finding or downgrade to Observation.
    **Findings**: None blocking
    **Review Cycles**: N (N-1 addressed by Review-Fix Agent)
    **Verdict**: Ready for human final review and merge
+
+   ---
+   **Review Confidence** (per-lens, agent self-assessed)
+   | Lens | Score | Notes |
+   |------|-------|-------|
+   | Correctness | <HIGH/MEDIUM/LOW> | <brief note> |
+   | Security | <HIGH/MEDIUM/LOW> | <brief note> |
+   | Quality | <HIGH/MEDIUM/LOW> | <brief note> |
+   | **Overall** | **<HIGH/MEDIUM/LOW>** | |
+
+   **Session Telemetry**
+   | Metric | Value |
+   |--------|-------|
+   | Model | <model from session context> |
+   | Duration | <elapsed_min>m |
    ```
+
+   Compute duration: `ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))`
 
 ## Exit Gates
 

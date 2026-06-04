@@ -183,6 +183,7 @@ traceability and enables the review agent's plan compliance check.
 1. Create the audit directory:
    ```bash
    mkdir -p .audit
+   echo '{}' > .audit/validation.json
    ```
 
 2. Write a structured fix plan to `.audit/approved-plan.md`:
@@ -549,6 +550,12 @@ After exiting the audit loop:
    - Python: `python -m py_compile <file>`
    - TypeScript: `npx tsc --noEmit`
    - JavaScript: `npx eslint <file>`
+5. At the END of Phase 5 (all edits complete), run a final build+lint
+   check and record results:
+   ```bash
+   # Record to .audit/validation.json (create if not exists)
+   # Set build_passed and lint_passed based on final check results
+   ```
 
 ## Phase 6: Pre-PR Checks
 
@@ -566,6 +573,8 @@ After exiting the audit loop:
    ```bash
    git add path/to/changed/files
    ```
+4. Update `.audit/validation.json` with pre-commit result:
+   - `pre_commit_passed`: true/false/null (no hooks)
 
 ## Phase 7: Test
 
@@ -581,6 +590,10 @@ After exiting the audit loop:
 3. If tests fail, investigate and fix. Track iterations.
 4. After 3 failed test-fix iterations, STOP and mark as failed.
 5. Post Jira milestone comment: "Tests passing."
+6. Update `.audit/validation.json` with test results:
+   - `tests_passed`: true/false
+   - `tests_total`: N (total tests run)
+   - `tests_failed`: N (failed count)
 
 ## Phase 8: Write Regression Test
 
@@ -588,6 +601,17 @@ After exiting the audit loop:
    caught the original bug.
 2. If no tests exist but the fix is testable, write a minimal test.
 3. Verify the new test fails without the fix and passes with it.
+4. Update `.audit/validation.json` with regression test results:
+   - `regression_added`: true/false
+   - `regression_validates`: true/false (fails without fix, passes with)
+5. Record diff stats for telemetry:
+   ```bash
+   git diff --cached --stat
+   ```
+   Update `.audit/validation.json`:
+   - `diff_additions`: N
+   - `diff_deletions`: N
+   - `files_touched`: N
 
 ## Phase 9: Commit and Create PR
 
@@ -650,7 +674,21 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
 2. Atomic label swap using `mcp__atlassian__editJiraIssue`:
    - Remove `bot-in-progress`
    - Add `bot-ready-for-review`
-3. Add structured Jira comment via `mcp__atlassian__addCommentToJiraIssue`:
+3. Compute session duration:
+   ```bash
+   ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))
+   ```
+
+4. Read `.audit/validation.json` for validation results.
+
+5. Re-assess **Fix Confidence** using mechanical rules (same 3
+   dimensions as Plan Confidence — compare to see if anything changed):
+   - Root cause: HIGH if single file, MEDIUM if 2-3 candidates, LOW if unclear
+   - Approach: HIGH if matches codebase pattern, MEDIUM if alternatives exist, LOW if best guess
+   - Scope: HIGH if grep confirmed all sites, MEDIUM if cross-package, LOW if broad impact
+
+6. Add structured Jira comment via `mcp__atlassian__addCommentToJiraIssue`
+   using this EXACT template (fill in all fields):
    ```
    ## Fix Applied
    **PR**: [#N](<pr_url>)
@@ -659,13 +697,39 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    **Summary**: <what was changed and why>
    **Tests**: Passing
    **Session**: <session_link>
+
+   ---
+   **Session Telemetry**
+   | Metric | Value |
+   |--------|-------|
+   | Model | <model from session context> |
+   | Duration | <ELAPSED_MIN>m |
+   | Audit | <N iterations, approved/skipped/disabled> |
+
+   **Fix Confidence** (agent self-assessed, mechanical rules)
+   | Dimension | Score | Rule Applied |
+   |-----------|-------|-------------|
+   | Root cause | <HIGH/MEDIUM/LOW> | <evidence> |
+   | Approach | <HIGH/MEDIUM/LOW> | <evidence> |
+   | Scope | <HIGH/MEDIUM/LOW> | <evidence> |
+   | **Overall** | **<HIGH/MEDIUM/LOW>** | |
+
+   **Validation** (from .audit/validation.json)
+   | Check | Result |
+   |-------|--------|
+   | Build | <Passed/Failed> |
+   | Lint | <Passed/Failed> |
+   | Tests | <Passed/Failed (N/N)> |
+   | Regression test | <Added, validates fix / Not added> |
+   | Pre-commit hooks | <Passed/Failed/N/A> |
+   | Diff size | <+N / -N (N files)> |
    ```
 
-4. **RTK Metrics** (if $RTK_WAS_ACTIVE is true):
+7. **RTK Metrics** (if $RTK_WAS_ACTIVE is true):
    ```bash
    rtk gain --json
    ```
-   Add to the Jira comment:
+   Append to the Jira comment:
    ```
    **RTK Token Savings**
    | Metric | Value |
@@ -685,7 +749,9 @@ If at any point you cannot proceed:
 2. Atomic label swap using `mcp__atlassian__editJiraIssue`:
    - Remove `bot-in-progress`
    - Add `bot-fix-failed`
-3. Add Jira comment with failure details:
+3. Compute duration: `ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))`
+4. Read `.audit/validation.json` if it exists (may be partial).
+5. Add Jira comment with failure details + partial telemetry:
    ```
    ## Fix Failed
    **Phase**: <which phase failed (e.g., Phase 4B: Audit Loop)>
@@ -693,9 +759,22 @@ If at any point you cannot proceed:
    **Failure**: <what went wrong>
    **Files Investigated**: <list>
    **Session**: <session_link>
+
+   ---
+   **Session Telemetry**
+   | Metric | Value |
+   |--------|-------|
+   | Model | <model from session context> |
+   | Duration | <ELAPSED_MIN>m |
+   | Phase reached | <last phase completed> |
+
+   **Partial Validation** (from .audit/validation.json, if available)
+   | Check | Result |
+   |-------|--------|
+   | <checks completed so far> | <results> |
    ```
-4. Do NOT create a partial PR.
-5. Phase-aware cleanup:
+6. Do NOT create a partial PR.
+7. Phase-aware cleanup:
    - **During Phase 4A/4B** (plan + audit): no PR exists yet. Delete
      the remote branch if it was pushed in Phase 2. Clean up `.audit/`
      directory.

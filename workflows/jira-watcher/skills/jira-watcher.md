@@ -231,6 +231,17 @@ Issue Fix Agent — Watcher Cycle Summary
 - Merged PRs updated: N
 - Stale sessions cleaned: N
 - Errors: N
+
+Completed Sessions (this cycle):
+  <ticket-key>: <model>, <duration>m (<outcome>, fix confidence: <HIGH/MEDIUM/LOW>)
+  ...
+  Total Opus-minutes: Nm | Sonnet-minutes: Nm
+
+LOW confidence fixes awaiting review: N
 ```
+
+Duration and Fix Confidence are extracted from `## Fix Applied` Jira
+comments on sessions that completed since the last cycle. Sessions
+still in progress are not included.
 
 Then exit the session.

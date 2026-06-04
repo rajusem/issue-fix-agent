@@ -54,7 +54,8 @@ Workflows communicate through Jira comments with specific formats:
 
 | Comment Header | Written By | Read By | Contains |
 |---------------|-----------|---------|----------|
-| `## Fix Applied` | issue-fix | issue-review, review-fix, jira-watcher | PR URL, branch, changes summary |
+| `## Fix Applied` | issue-fix | issue-review, review-fix, jira-watcher | PR URL, branch, changes + telemetry footer (model, duration, Fix Confidence, Validation, RTK savings) |
+| `## Fix Failed` | issue-fix | jira-watcher | Failure details + partial telemetry (model, duration, phase reached, partial validation) |
 | `## Agent Code Review` | issue-review | review-fix, jira-watcher | Review findings, verdict, cycle count |
 | `## Review-Fix Cycle` | review-fix | issue-review, jira-watcher | Addressed findings, cycle N/3 |
 | `## Agent Session Started` | jira-watcher | — | Session link, model |

@@ -44,10 +44,14 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 ## Phase 1: Fetch Context
 
-1. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
+1. Record session start time:
+   ```bash
+   START_TIME=$(date +%s)
+   ```
+2. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
    - Find the PR URL from ticket comments
    - Count existing `## Review-Fix Cycle` comments to determine cycle N
-2. **Check cycle count** — if N >= 3:
+3. **Check cycle count** — if N >= 3:
    - Atomic label swap using `mcp__atlassian__editJiraIssue`:
      `bot-review-fix` → `bot-fix-failed`
    - Add Jira comment: "Max review cycles (3) exceeded — needs human attention."
@@ -146,7 +150,16 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    - [Finding 1]: Fixed by [description]
    - [Finding 2]: Fixed by [description]
    **Next**: Sending back for review
+
+   ---
+   **Session Telemetry**
+   | Metric | Value |
+   |--------|-------|
+   | Model | <model from session context> |
+   | Duration | <elapsed_min>m |
    ```
+
+   Compute duration: `ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))`
 
 ## Exit Gates
 
