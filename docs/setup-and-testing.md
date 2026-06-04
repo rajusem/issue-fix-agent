@@ -496,5 +496,82 @@ Before running on real tickets:
 - [ ] Ambient cron schedule set up for watcher (recommended: every 20 min)
 - [ ] Team briefed on label conventions (`autofix`, `bot-*` labels)
 - [ ] Jira ticket template shared with team (Agent Configuration section)
-- [ ] Concurrency limits reviewed in `config.env`
-- [ ] TTLs reviewed (60 min fix, 30 min review, 45 min review-fix)
+- [ ] Concurrency limits reviewed in `config.env` (MAX_CONCURRENT_FIX_SESSIONS=4)
+- [ ] TTLs reviewed (150 min fix, 30 min review, 45 min review-fix)
+- [ ] Audit loop config reviewed (AUDIT_ENABLED, AUDIT_MAX_ITERATIONS,
+      AUDIT_SKIP_SIMPLE, AUDIT_MODEL, AUDIT_MAX_COST_USD)
+
+---
+
+## Part 7: Audit Loop Test Scenarios
+
+These test the design audit loop (Phase 4A + 4B) added to the fix
+workflow. Run after verifying the basic fix pipeline (Part 4).
+
+### Test 8: Simple Fix — Audit Skipped
+
+1. Create a ticket with a 1-file, obvious fix (e.g., typo in a string)
+2. Add `autofix` label
+3. **Expected**: Fix agent writes plan, complexity gate routes to
+   "skip audit", Jira shows `## Fix Plan (v1 — APPROVED, audit skipped)`
+   with Planned Files list, proceeds directly to implementation
+4. **Verify**: No `## Audit — Iteration` comments in Jira, fix
+   completes faster than audit-enabled fixes (~30 min vs ~70 min)
+
+### Test 9: Single Audit Iteration — Approved on First Pass
+
+1. Create a ticket with a 3-5 file fix (medium complexity)
+2. Add `autofix` label
+3. **Expected**: Fix agent writes plan, complexity gate triggers audit,
+   3 sub-agents run sequentially (Architecture, PE, Language Expert),
+   no CRITICAL/MAJOR findings, plan approved on first iteration
+4. **Verify**: Jira shows `## Audit — Iteration 1 Starting` heartbeat,
+   followed by `## Fix Plan (vN — APPROVED)` with Planned Files
+
+### Test 10: Two Audit Iterations — Revised and Approved
+
+1. Create a ticket requiring a cross-module fix (5+ files, touching
+   public interfaces)
+2. Add `autofix` label
+3. **Expected**: First iteration finds MAJOR issues, plan is revised,
+   second iteration approves the revised plan
+4. **Verify**: Jira shows two heartbeat comments, a revision comment
+   (`## Fix Plan (v2 — Iteration 1 Revision)`), and final approval
+
+### Test 11: Three Audit Iterations — Max Reached, Failed
+
+1. Create a ticket with a fundamentally ambiguous fix (multiple valid
+   approaches, unclear requirements)
+2. Add `autofix` label
+3. **Expected**: All 3 iterations produce MAJOR findings that can't
+   converge, ticket marked `bot-fix-failed`
+4. **Verify**: Jira shows 3 heartbeat comments, ticket has
+   `bot-fix-failed` label, comment says "max iterations reached"
+
+### Test 12: TTL Truncation
+
+1. Create a complex ticket AND set a short FIX_SESSION_TTL (e.g., 60
+   minutes in a test session) to force TTL pressure
+2. Add `autofix` label
+3. **Expected**: After Phase 4 RCA takes ~20-30 min, TTL checkpoint
+   detects < 45 min remaining and skips audit loop
+4. **Verify**: Jira comment says "Audit truncated — insufficient TTL"
+
+### Test 13: Plan Compliance Check — Divergence Detected
+
+1. Manually create a PR that adds files NOT in the approved plan
+   (e.g., add unplanned config changes)
+2. Trigger the review agent on the ticket
+3. **Expected**: Phase 2.5 detects unplanned files. If > 50% unplanned,
+   ticket marked `bot-fix-failed` with "Plan Compliance Failed"
+4. **Verify**: Jira comment lists unplanned and missing files
+
+### Test 14: Audit Disabled via Config
+
+1. Set `AUDIT_ENABLED=false` in the session environment
+2. Create a ticket with a complex fix (would normally trigger audit)
+3. Add `autofix` label
+4. **Expected**: Fix agent writes plan but skips audit entirely, Jira
+   shows `## Fix Plan (v1 — APPROVED, audit disabled)`
+5. **Verify**: No audit heartbeat comments, fix proceeds to
+   implementation immediately

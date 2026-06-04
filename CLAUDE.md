@@ -60,12 +60,16 @@ Workflows communicate through Jira comments with specific formats:
 | `## Agent Session Started` | jira-watcher | — | Session link, model |
 | `## PR Merged` | jira-watcher | — | Merge commit, merged-by |
 | `## Missing Information` | jira-watcher | — | What fields are needed |
+| `## Fix Plan (v*)` | issue-fix | issue-review | Plan version, approach, files, confidence |
+| `## Fix Plan (v* — APPROVED)` | issue-fix | issue-review | Final audited plan for compliance check |
+| `## Audit — Iteration N Starting` | issue-fix | — | Heartbeat: timestamp, plan version, remaining TTL |
+| `## Audit — Iteration N Results` | issue-fix | — | Auditor verdicts, findings, convergence |
 
 PR body frontmatter: `<!-- issue-fix-agent:jira=<KEY> session=<NAME> -->`
 is used by the watcher to link merged PRs back to Jira tickets.
 
 ## Configuration
 
-- `config/config.env` — Models, TTLs, concurrency limits
+- `config/config.env` — Models, TTLs, concurrency limits, audit loop config
 - `config/projects.json` — Watched projects, skill URL allowlist
 - All repo/branch/commit/skill info comes from Jira tickets

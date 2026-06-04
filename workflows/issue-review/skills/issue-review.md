@@ -80,6 +80,52 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
    ```
    If not found, proceed without project context.
 
+## Phase 2.5: Plan Compliance Check
+
+Mechanical file-list comparison only. Do NOT add semantic approach
+matching — the audit loop already validated the approach.
+
+1. Search the Jira ticket comments for a comment containing both
+   `## Fix Plan` and `APPROVED`.
+   - Note: mcp-atlassian may return comments in ADF format. Search
+     for the text content within the comment body.
+
+2. If no approved plan comment found: skip this check entirely and
+   proceed to Phase 3. (The fix may not have used the audit loop.)
+
+3. If an approved plan comment is found, look for a `**Planned Files**:`
+   section in that comment. If no planned files section exists (e.g.,
+   short stub comments), skip this check and proceed to Phase 3.
+
+4. Extract the list of planned file paths from the `**Planned Files**:`
+   section.
+
+5. Compare against the PR's changed files (already fetched in Phase 2
+   step 1 — reuse that data, do not make a duplicate `gh` call):
+   - **Unplanned files**: files in the PR but NOT in the planned list
+   - **Missing files**: files in the plan but NOT in the PR
+
+6. **Divergence check** — if unplanned files exceed 50% of total PR
+   files:
+   - Atomic label swap via `mcp__atlassian__editJiraIssue`:
+     `bot-ready-for-review` → `bot-fix-failed`
+   - Post Jira comment:
+     ```
+     ## Plan Compliance Failed
+     Implementation diverged significantly from audited plan.
+     **Unplanned files**: <list>
+     **Missing files**: <list>
+     **Divergence**: X% unplanned (threshold: 50%)
+     Needs human review of the implementation approach.
+     ```
+   - Exit.
+
+7. If there are unplanned or missing files but under 50%:
+   - Note them in the review output as **Observations** (not findings).
+   - Common false positives: test files matching planned source files,
+     lockfiles, generated code. Note these as expected deviations.
+   - Proceed to Phase 3.
+
 ## Scope Rules
 
 **Score only the diff.** Do not flag pre-existing bugs, files not modified,
