@@ -1,0 +1,5 @@
+{
+  "name": "jira-watcher",
+  "description": "Cron-spawned watcher that polls Jira for autofix tickets, dispatches fix/review/review-fix sessions, checks for merged PRs, and cleans up stale sessions. Short-lived — exits after one cycle.",
+  "version": "1.0.0"
+}

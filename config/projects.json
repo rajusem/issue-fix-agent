@@ -1,0 +1,8 @@
+{
+  "watched_projects": ["PROJ1", "PROJ2"],
+  "skill_url_allowlist": [
+    "https://raw.githubusercontent.com/org/*/main/.claude/skills/*",
+    "https://raw.githubusercontent.com/org/*/.claude/skills/*"
+  ],
+  "bot_service_account": "bot-autofix"
+}

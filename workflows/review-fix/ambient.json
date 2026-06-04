@@ -1,0 +1,5 @@
+{
+  "name": "review-fix",
+  "description": "Addresses code review findings on an existing PR. Reads review comments, implements fixes for each finding, pushes to the same branch, and sends back for re-review. Max 3 cycles.",
+  "version": "1.0.0"
+}
