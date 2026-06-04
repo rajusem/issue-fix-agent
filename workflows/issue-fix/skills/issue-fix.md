@@ -77,18 +77,45 @@ comments for traceability.
 
 ## Phase 1: Understand
 
-1. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
+1. Record session start time FIRST (before any other work):
+   ```bash
+   START_TIME=$(date +%s)
+   ```
+2. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
    - Extract issue summary, description, comments
    - Parse agent configuration fields from description/comments:
      - `**Repository**:` (required)
      - `**Branch**:` (optional, default: repo default branch)
      - `**Commit**:` (optional — specific commit to investigate)
      - `**Skill**:` (optional — domain-specific guidance URL)
-2. Post Jira milestone comment: "Agent started working on this ticket."
-3. Record session start time for TTL tracking:
+3. Post Jira milestone comment: "Agent started working on this ticket."
+4. **RTK Token Optimization** (conditional — skip if $RTK_ENABLED is
+   not "true"):
    ```bash
-   START_TIME=$(date +%s)
+   RTK_WAS_ACTIVE=false
+   if [ "${RTK_ENABLED}" = "true" ]; then
+     if which rtk >/dev/null 2>&1; then
+       # Backup settings before RTK modifies them
+       cp .claude/settings.json .claude/settings.json.pre-rtk 2>/dev/null || true
+       # Install hook
+       rtk init
+       # Healthcheck: verify hook works
+       HEALTH_OUTPUT=$(echo "RTK_HEALTHCHECK" 2>&1)
+       if echo "$HEALTH_OUTPUT" | grep -q "RTK_HEALTHCHECK"; then
+         RTK_WAS_ACTIVE=true
+         RTK_VERSION=$(rtk --version 2>/dev/null || echo "unknown")
+       else
+         # Hook failed — restore backup, continue without RTK
+         cp .claude/settings.json.pre-rtk .claude/settings.json 2>/dev/null || true
+         echo "WARNING: RTK healthcheck failed, continuing without RTK"
+       fi
+     else
+       echo "WARNING: RTK binary not found in image, skipping"
+     fi
+   fi
    ```
+   If RTK activated, post Jira milestone: "RTK token optimization
+   enabled ($RTK_VERSION)"
 
 ## Phase 2: Prepare
 
@@ -278,6 +305,14 @@ these in the session prompt, but use these defaults as fallback):
 - FIX_SESSION_TTL: 150
 
 ## Phase 4B: Audit Loop
+
+**RTK Pause:** If RTK was active ($RTK_WAS_ACTIVE=true), temporarily
+disable it to prevent filtering of evidence validation commands:
+```bash
+if [ "$RTK_WAS_ACTIVE" = "true" ]; then
+  rtk hooks uninstall
+fi
+```
 
 Run up to $AUDIT_MAX_ITERATIONS iterations (default 3). Config values
 are passed by the watcher in the session prompt or set as Ambient env
@@ -485,6 +520,15 @@ Post to Jira:
 **Status**: Approved — proceeding to implementation
 ```
 
+### RTK Resume
+
+If RTK was active before the audit loop, re-enable it:
+```bash
+if [ "$RTK_WAS_ACTIVE" = "true" ]; then
+  rtk init
+fi
+```
+
 ### Context Compaction
 
 After exiting the audit loop:
@@ -616,6 +660,22 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    **Tests**: Passing
    **Session**: <session_link>
    ```
+
+4. **RTK Metrics** (if $RTK_WAS_ACTIVE is true):
+   ```bash
+   rtk gain --json
+   ```
+   Add to the Jira comment:
+   ```
+   **RTK Token Savings**
+   | Metric | Value |
+   |--------|-------|
+   | Commands filtered | <total_commands> |
+   | Tokens saved | <savings_count> (<savings_pct>%) |
+   ```
+   If any single command shows >95% savings, add a warning:
+   "RTK savings unusually high on <cmd> (>95%) — verify output was
+   not over-filtered."
 
 ## Failure Protocol
 

@@ -575,3 +575,22 @@ workflow. Run after verifying the basic fix pipeline (Part 4).
    shows `## Fix Plan (v1 — APPROVED, audit disabled)`
 5. **Verify**: No audit heartbeat comments, fix proceeds to
    implementation immediately
+
+### Test 15: RTK Token Optimization
+
+1. Ensure RTK binary is installed in the container image
+2. Set `RTK_ENABLED=true` in the session environment
+3. Create a ticket with a normal fix
+4. Add `autofix` label
+5. **Expected**: Phase 1 shows "RTK token optimization enabled (vX.Y.Z)",
+   RTK hook intercepts shell commands, Phase 10 Jira comment includes
+   `**RTK Token Savings**` table
+6. **Verify**:
+   - RTK healthcheck passed (no "WARNING: RTK healthcheck failed")
+   - Token savings > 0% reported in Jira comment
+   - If audit loop ran: RTK was paused during Phase 4B (no RTK
+     filtering on evidence validation commands)
+   - If any command shows >95% savings: canary warning in comment
+7. **Negative test**: Set `RTK_ENABLED=false` (or unset). Verify NO
+   RTK milestone, NO RTK savings in Jira comment, identical behavior
+   to pre-RTK sessions

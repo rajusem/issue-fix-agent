@@ -42,6 +42,18 @@ When the complexity gate triggers an audit loop (Phase 4B), spawn
   to reformat as JSON only. If still unparseable, extract findings as
   free-text and flag as "unstructured audit response"
 
+## RTK Token Optimization (Optional)
+
+If `$RTK_ENABLED` is "true" and the `rtk` binary is in the container
+image, RTK is activated in Phase 1 to reduce token consumption by
+60-90% on shell command outputs.
+
+- RTK is **paused during Phase 4B** (audit loop) to prevent filtering
+  of evidence validation commands. Re-enabled after audit completes.
+- RTK is transparent — output is a valid subset of the original
+- If RTK fails at any point, the session continues without it
+- RTK metrics (`rtk gain`) are captured in Phase 10 Jira comment
+
 ## Workflow
 
 Follow the `issue-fix.md` skill in `skills/` for the complete workflow.

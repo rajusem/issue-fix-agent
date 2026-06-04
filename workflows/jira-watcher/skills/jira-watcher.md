@@ -90,7 +90,7 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    has all context without needing access to the watcher's config files:
    ```json
    {
-     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URL: <skill_url or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>",
+     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URL: <skill_url or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
      "name": "fix-<ticket-key-lower>",
      "labels": {
        "jira-ticket": "<TICKET-KEY>",
