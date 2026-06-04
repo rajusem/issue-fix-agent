@@ -85,12 +85,17 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    - Add Jira comment noting if transition was skipped
 
 8. **Create fix session** via Ambient `create_session` MCP.
+   **If session creation fails:** immediately remove `bot-in-progress`
+   label via `mcp__atlassian__editJiraIssue` (rollback step 5) and add
+   a Jira comment: "Session creation failed — ticket returned to queue."
+   Then skip to the next ticket.
+
    Include the ticket key, parsed config fields, AND the skill URL
    allowlist from `config/projects.json` in the prompt so the fix agent
    has all context without needing access to the watcher's config files:
    ```json
    {
-     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URL: <skill_url or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
+     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URL: <skill_url or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nAUDIT_ENABLED: <AUDIT_ENABLED from config.env, default true>\nAUDIT_MAX_ITERATIONS: <AUDIT_MAX_ITERATIONS from config.env, default 3>\nAUDIT_SKIP_SIMPLE: <AUDIT_SKIP_SIMPLE from config.env, default true>\nAUDIT_MODEL: <AUDIT_MODEL from config.env, default claude-sonnet-4-6>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
      "name": "fix-<ticket-key-lower>",
      "labels": {
        "jira-ticket": "<TICKET-KEY>",

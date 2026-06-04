@@ -407,12 +407,14 @@ coordination happens through **structured Jira comments** and **labels**.
 | `## Agent Session Started` | Watcher | — | Session link, model |
 | `## Missing Information` | Watcher | — | Required fields |
 | `## Fix Plan (v*)` | Fix Agent | Review Agent | Plan version, approach, files, confidence |
-| `## Audit — Iteration N` | Fix Agent | — | Auditor verdicts, findings, convergence |
+| `## Audit — Iteration N Starting` | Fix Agent | — | Heartbeat: timestamp, plan version, remaining TTL |
+| `## Fix Plan (vN — Iteration N Revision)` | Fix Agent | — | Revised plan with findings addressed, convergence |
 | `## Fix Plan (v* — APPROVED)` | Fix Agent | Review Agent | Final audited plan |
 | `## Fix Applied` | Fix Agent | Review, Review-Fix, Watcher | PR URL, branch, changes, session |
 | `## Agent Code Review` | Review Agent | Review-Fix, Watcher | Findings, verdict, cycle count |
 | `## Review-Fix Cycle N/3` | Review-Fix | Review, Watcher | Addressed findings, cycle N |
 | `## PR Merged` | Watcher | — | Merge commit SHA, merged-by |
+| `## Fix Failed` | Fix Agent | Watcher | Failure details, phase reached, partial telemetry |
 
 ### PR Frontmatter
 
@@ -523,7 +525,7 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
 | `AUDIT_SKIP_SIMPLE` | true | Skip audit for simple fixes |
 | `AUDIT_MODEL` | claude-sonnet-4-6 | Model for all audit sub-agents |
-| `AUDIT_MAX_COST_USD` | 8 | Cost cap — skip iterations if exceeded |
+| ~~`AUDIT_MAX_COST_USD`~~ | — | Deferred — requires Ambient token-count API. `AUDIT_MAX_ITERATIONS` is the effective cost control. |
 
 ### projects.json
 
@@ -546,7 +548,8 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | 2 audit iterations | 6 Sonnet | ~90m | ~$6.00 |
 | 3 audit iterations (worst) | 9 Sonnet | ~110m | ~$7.50 |
 
-Cost cap `AUDIT_MAX_COST_USD=8` prevents runaway spend. All sub-agents
+`AUDIT_MAX_ITERATIONS` is the effective cost control (token-level cost
+cap deferred until Ambient exposes token counts). All sub-agents
 run on Sonnet; Opus is reserved for the orchestrator.
 
 **Caveat:** Claude Code's Agent tool may not support model selection

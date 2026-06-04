@@ -64,7 +64,7 @@ Workflows communicate through Jira comments with specific formats:
 | `## Fix Plan (v*)` | issue-fix | issue-review | Plan version, approach, files, confidence |
 | `## Fix Plan (v* — APPROVED)` | issue-fix | issue-review | Final audited plan for compliance check |
 | `## Audit — Iteration N Starting` | issue-fix | — | Heartbeat: timestamp, plan version, remaining TTL |
-| `## Audit — Iteration N Results` | issue-fix | — | Auditor verdicts, findings, convergence |
+| `## Fix Plan (vN — Iteration N Revision)` | issue-fix | — | Revised plan with findings addressed, convergence |
 
 PR body frontmatter: `<!-- issue-fix-agent:jira=<KEY> session=<NAME> -->`
 is used by the watcher to link merged PRs back to Jira tickets.

@@ -668,26 +668,28 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
 
 ## Phase 10: Update Jira
 
+**IMPORTANT: Post the Jira comment BEFORE the label swap.** The label
+swap makes the ticket visible to the watcher's review dispatch. The
+`## Fix Applied` comment must exist before the review agent is
+dispatched, because the review agent reads the PR URL from it.
+
 1. Attempt Jira status transition to "Review" via
    `mcp__atlassian__transitionJiraIssue`. If transition fails due to missing
    gate fields, skip and proceed with label-only tracking.
-2. Atomic label swap using `mcp__atlassian__editJiraIssue`:
-   - Remove `bot-in-progress`
-   - Add `bot-ready-for-review`
-3. Compute session duration:
+2. Compute session duration:
    ```bash
    ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))
    ```
 
-4. Read `.audit/validation.json` for validation results.
+3. Read `.audit/validation.json` for validation results.
 
-5. Re-assess **Fix Confidence** using mechanical rules (same 3
+4. Re-assess **Fix Confidence** using mechanical rules (same 3
    dimensions as Plan Confidence — compare to see if anything changed):
    - Root cause: HIGH if single file, MEDIUM if 2-3 candidates, LOW if unclear
    - Approach: HIGH if matches codebase pattern, MEDIUM if alternatives exist, LOW if best guess
    - Scope: HIGH if grep confirmed all sites, MEDIUM if cross-package, LOW if broad impact
 
-6. Add structured Jira comment via `mcp__atlassian__addCommentToJiraIssue`
+5. Add structured Jira comment via `mcp__atlassian__addCommentToJiraIssue`
    using this EXACT template (fill in all fields):
    ```
    ## Fix Applied
@@ -725,7 +727,7 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    | Diff size | <+N / -N (N files)> |
    ```
 
-7. **RTK Metrics** (if $RTK_WAS_ACTIVE is true):
+6. **RTK Metrics** (if $RTK_WAS_ACTIVE is true):
    ```bash
    rtk gain --json
    ```
@@ -740,6 +742,14 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    If any single command shows >95% savings, add a warning:
    "RTK savings unusually high on <cmd> (>95%) — verify output was
    not over-filtered."
+
+7. **LAST STEP — Label swap** (after all comments are posted):
+   Atomic label swap using `mcp__atlassian__editJiraIssue`:
+   - Remove `bot-in-progress`
+   - Add `bot-ready-for-review`
+   This is the LAST action because it makes the ticket visible to
+   the watcher's review dispatch. The `## Fix Applied` comment must
+   already exist when the review agent is dispatched.
 
 ## Failure Protocol
 

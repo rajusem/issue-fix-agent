@@ -326,7 +326,12 @@ follow the Failure Protocol.
 
 If the review cannot be completed:
 
-- **Permanent failure** (PR not found, PR already merged, no PR URL in ticket):
+- **PR already merged** (success, not failure):
+  - Atomic label swap using `mcp__atlassian__editJiraIssue`:
+    remove `bot-ready-for-review`, add `bot-review-complete`
+  - Add Jira comment: "PR was already merged before agent review.
+    Marking as review-complete for post-merge tracking."
+- **Permanent failure** (PR not found, PR closed, no PR URL in ticket):
   - Atomic label swap using `mcp__atlassian__editJiraIssue`:
     remove `bot-ready-for-review`, add `bot-fix-failed`
   - Add Jira comment explaining the failure
