@@ -196,7 +196,7 @@ JQL: labels = bot-review-fix AND labels NOT IN (bot-ready-for-review, bot-fix-fa
 4. For each merged PR:
    a. Atomic label swap using `mcp__atlassian__editJiraIssue`:
       remove `bot-review-complete`, add `bot-merged`
-   d. Add Jira comment:
+   b. Add Jira comment:
       ```
       ## PR Merged
       **PR**: [#N](<pr_url>) merged to <base_branch>

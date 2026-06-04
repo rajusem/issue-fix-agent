@@ -372,25 +372,30 @@ a state, and transitions are atomic (remove old + add new in one call).
      │ (no repo URL)   │                │ (fix agent       │
      │                 │                │  working)        │
      └────────┬────────┘                └────────┬─────────┘
-              │ user fixes                       │
-              │ & removes label                  ▼
-              │                        ┌─────────────────────┐
-              └───────────────────────►│ bot-ready-for-review │
-                                       │ (PR created)         │
-                                       └────────┬────────────┘
-                                                │
-                              ┌─────────────────┼───────────────┐
-                              ▼                                 ▼
-                     ┌────────────────┐               ┌─────────────────────┐
-                     │ bot-review-fix │               │ bot-review-complete  │
-                     │ (max 3 cycles) │               │ (await human merge)  │
-                     └───────┬────────┘               └────────┬────────────┘
-                             │                                 │
-                             │ fix + re-queue                  │ human merges
-                             └───────────────────┐             ▼
-                                                 │    ┌─────────────────┐
-                                                 └───►│   bot-merged    │
-                                                      └─────────────────┘
+              │                                  │
+              │ user adds info                   ▼
+              │ & removes label        ┌─────────────────────┐
+              │ (re-enters autofix     │ bot-ready-for-review │
+              │  queue, watcher        │ (PR created)         │
+              │  re-picks ticket)      └────────┬────────────┘
+              │                                 │
+              └──► back to autofix ◄────────────┤
+                   (normal flow)                │
+                                  ┌─────────────┼───────────────┐
+                                  ▼                             ▼
+                         ┌────────────────┐           ┌─────────────────────┐
+                         │ bot-review-fix │           │ bot-review-complete  │
+                         │ (max 3 cycles) │           │ (await human merge)  │
+                         └───────┬────────┘           └────────┬────────────┘
+                                 │                             │
+                                 │ fix + re-queue              │ human merges
+                                 │ (back to                    ▼
+                                 │  bot-ready-for-review) ┌─────────────────┐
+                                 └───────────────────────►│   bot-merged    │
+                                   ▲                      └─────────────────┘
+                                   │
+                                   └── loops back to bot-ready-for-review
+                                       (NOT to bot-merged)
 
      Any stage ──────────────────────────────────────► bot-fix-failed
 ```
@@ -513,14 +518,19 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | Variable | Value | Purpose |
 |----------|-------|---------|
 | `FIX_SESSION_TTL` | 150 | All fix sessions (simple exits early) |
-| `FIX_MODEL` | claude-opus-4-6 | Fix agent + review-fix agent |
-| `REVIEW_MODEL` | claude-sonnet-4-6 | Review agent |
-| `WATCHER_MODEL` | claude-sonnet-4-6 | Watcher |
+| `FIX_MODEL` | claude-opus-4-6 | Fix agent model |
+| `REVIEW_MODEL` | claude-sonnet-4-6 | Review agent model |
+| `REVIEW_SESSION_TTL` | 30 | Review session timeout (minutes) |
+| `REVIEW_FIX_MODEL` | claude-opus-4-6 | Review-fix agent model |
+| `REVIEW_FIX_SESSION_TTL` | 45 | Review-fix session timeout (minutes) |
+| `WATCHER_MODEL` | claude-sonnet-4-6 | Watcher model |
+| `WATCHER_SESSION_TTL` | 15 | Watcher session timeout (minutes) |
 | `MAX_CONCURRENT_FIX_SESSIONS` | 4 | Parallel fix sessions |
 | `MAX_CONCURRENT_REVIEW_SESSIONS` | 2 | Parallel review sessions |
 | `MAX_CONCURRENT_REVIEW_FIX_SESSIONS` | 2 | Parallel review-fix sessions |
 | `JIRA_POLL_INTERVAL` | 20 | Minutes between watcher cycles |
 | `REVIEW_FIX_MAX_CYCLES` | 3 | Max review-fix iterations |
+| `RTK_ENABLED` | false | RTK token optimization (opt-in) |
 | `AUDIT_ENABLED` | true | Master switch for design audit loop |
 | `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
 | `AUDIT_SKIP_SIMPLE` | true | Skip audit for simple fixes |

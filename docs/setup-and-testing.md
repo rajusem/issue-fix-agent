@@ -212,7 +212,13 @@ Edit `config/projects.json`:
 Edit `config/config.env`:
 ```
 JIRA_SITE=stage-redhat.atlassian.net
-JIRA_PROJECTS=OBSINTA
+```
+
+Edit `config/projects.json` — set your watched project:
+```json
+{
+  "watched_projects": ["OBSINTA"]
+}
 ```
 
 ---
@@ -499,7 +505,7 @@ Before running on real tickets:
 - [ ] Concurrency limits reviewed in `config.env` (MAX_CONCURRENT_FIX_SESSIONS=4)
 - [ ] TTLs reviewed (150 min fix, 30 min review, 45 min review-fix)
 - [ ] Audit loop config reviewed (AUDIT_ENABLED, AUDIT_MAX_ITERATIONS,
-      AUDIT_SKIP_SIMPLE, AUDIT_MODEL, AUDIT_MAX_COST_USD)
+      AUDIT_SKIP_SIMPLE, AUDIT_MODEL)
 
 ---
 

@@ -543,14 +543,14 @@ After exiting the audit loop:
 1. Read the approved plan from `.audit/approved-plan.md` and implement
    according to the audited approach.
 2. Make the minimal change necessary to fix the issue.
-2. Follow the repository's coding conventions (from CLAUDE.md).
-3. Do NOT introduce unrelated changes or refactors.
-4. After each change, verify the code compiles/lints:
+3. Follow the repository's coding conventions (from CLAUDE.md).
+4. Do NOT introduce unrelated changes or refactors.
+5. After each change, verify the code compiles/lints:
    - Go: `go build ./... && go vet ./...`
    - Python: `python -m py_compile <file>`
    - TypeScript: `npx tsc --noEmit`
    - JavaScript: `npx eslint <file>`
-5. At the END of Phase 5 (all edits complete), run a final build+lint
+6. At the END of Phase 5 (all edits complete), run a final build+lint
    check and record results:
    ```bash
    # Record to .audit/validation.json (create if not exists)
