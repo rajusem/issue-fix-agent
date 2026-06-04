@@ -41,6 +41,11 @@ soundness, pattern consistency, and unintended consequences.
    plan doesn't address? (e.g., caching invalidation, event ordering,
    backward compatibility, race conditions)
 
+7. **Investigation strategy fit** — If the plan includes an
+   "Investigation Strategy" section: does the chosen strategy match
+   the signal detected? Did the agent miss a more relevant strategy?
+   Is the root cause finding consistent with the strategy used?
+
 ## Output
 
 Return a single JSON object in a ```json block with this schema:

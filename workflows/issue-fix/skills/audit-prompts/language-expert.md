@@ -71,6 +71,14 @@ the relevant language section below. Apply those criteria.
 5. **Framework conventions** — Spring/Quarkus patterns, dependency
    injection, bean lifecycle
 
+## Investigation Strategy Patterns
+
+If the plan includes an "Investigation Strategy" section, verify
+that strategy-specific code patterns are handled idiomatically:
+- Concurrency signal → verify mutex/lock/channel usage is correct
+- Dependency signal → verify API compatibility with new version
+- Performance signal → verify the fix doesn't introduce new hotspots
+
 ## Output
 
 Return a single JSON object in a ```json block with this schema:

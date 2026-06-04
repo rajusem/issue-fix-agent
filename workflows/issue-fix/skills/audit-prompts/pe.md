@@ -38,7 +38,12 @@ impact, deployment safety, and production readiness.
    what's the rollback procedure? Is it a simple revert or does it
    need data cleanup?
 
-6. **Security** — New input surfaces? Credential handling? Injection
+6. **Strategy-root cause alignment** — If the plan includes an
+   "Investigation Strategy" section: does the fix address the root
+   cause identified by the strategy, or just the symptom? Is the
+   strategy's evidence sufficient to justify the proposed fix?
+
+7. **Security** — New input surfaces? Credential handling? Injection
    risk?
 
 ## Output

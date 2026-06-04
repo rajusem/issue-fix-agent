@@ -19,13 +19,23 @@ Add these fields to the ticket description:
 ```markdown
 [Issue description — what's broken, steps to reproduce, expected behavior]
 
+The agent analyzes the description to choose an investigation strategy.
+Signals like "was working before" trigger git history analysis; "intermittent"
+triggers concurrency analysis. Be descriptive about the problem behavior.
+
 ---
 ## Agent Configuration
 **Repository**: https://github.com/org/repo          (REQUIRED)
 **Branch**: main                                      (optional)
 **Commit**: abc1234def                                (optional — investigate this specific commit)
-**Skill**: https://raw.githubusercontent.com/.../skill.md  (optional)
+**Skills**:                                           (optional — multiple guidance URLs)
+  - https://raw.githubusercontent.com/org/repo/main/.claude/skills/conventions.md
+  - https://raw.githubusercontent.com/org/repo/main/.claude/skills/testing.md
+**Knowledge Repo**: https://github.com/org/team-docs  (optional — cloned for context)
 ```
+
+The old `**Skill**:` (singular) format is still accepted for backward
+compatibility.
 
 ## Label State Machine
 

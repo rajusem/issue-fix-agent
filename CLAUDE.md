@@ -72,5 +72,6 @@ is used by the watcher to link merged PRs back to Jira tickets.
 ## Configuration
 
 - `config/config.env` — Models, TTLs, concurrency limits, audit loop config
-- `config/projects.json` — Watched projects, skill URL allowlist
-- All repo/branch/commit/skill info comes from Jira tickets
+- `config/projects.json` — Watched projects, skill URL allowlist, knowledge repo allowlist
+- Ticket fields: repo, branch, commit, skills (multiple), knowledge repo
+- Signal classification: agent analyzes description to choose investigation strategy

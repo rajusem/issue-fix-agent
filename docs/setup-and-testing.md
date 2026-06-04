@@ -600,3 +600,45 @@ workflow. Run after verifying the basic fix pipeline (Part 4).
 7. **Negative test**: Set `RTK_ENABLED=false` (or unset). Verify NO
    RTK milestone, NO RTK savings in Jira comment, identical behavior
    to pre-RTK sessions
+
+### Test 16: Regression Signal — Git History Investigation
+
+1. Create a ticket with description: "The /api/users endpoint was
+   returning correct results until last week. Now it returns 500."
+2. Include `**Repository**:` pointing to a repo with recent commits
+3. Add `autofix` label
+4. **Expected**: Agent classifies signal as "regression", runs default
+   investigation FIRST, then runs Git History Strategy (checks
+   `git log`, `git blame` on affected files)
+5. **Verify**: Fix plan includes `### Investigation Strategy` section
+   with "Signals detected: regression" and git history findings
+
+### Test 17: Multiple Skills + Knowledge Repo
+
+1. Create a ticket with:
+   ```
+   **Repository**: https://github.com/org/backend
+   **Skills**:
+     - https://raw.githubusercontent.com/org/ai-helpers/main/.claude/skills/go.md
+     - https://raw.githubusercontent.com/org/ai-helpers/main/.claude/skills/api.md
+   **Knowledge Repo**: https://github.com/org/team-docs
+   ```
+2. Add `autofix` label
+3. **Expected**: Agent fetches both skill URLs, clones knowledge repo
+   to `.knowledge/`, references all during investigation
+4. **Verify**:
+   - Both skills fetched (check Jira milestone comments)
+   - `.knowledge/` cloned with hooks disabled
+   - `.knowledge/` cleaned up before Phase 5 implementation
+   - Invalid/missing skill URLs logged as warnings, not errors
+
+### Test 18: Concurrency Signal — Audit Floor
+
+1. Create a ticket: "Intermittent 500 errors under load, cannot
+   reproduce consistently"
+2. Fix is a simple 1-file, 5-line change (would normally skip audit)
+3. Add `autofix` label
+4. **Expected**: Signal classified as "concurrency", complexity gate
+   floors at single audit iteration minimum even though file/line
+   count would normally skip audit
+5. **Verify**: Audit runs despite simple fix (concurrency signal floor)

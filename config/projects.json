@@ -4,5 +4,9 @@
     "https://raw.githubusercontent.com/org/*/main/.claude/skills/*",
     "https://raw.githubusercontent.com/org/*/.claude/skills/*"
   ],
+  "knowledge_repo_allowlist": [
+    "https://github.com/org/team-docs",
+    "https://github.com/org/architecture-docs"
+  ],
   "bot_service_account": "bot-autofix"
 }
