@@ -277,19 +277,33 @@ Not every fix needs 3 auditors and 3 iterations. An ordered if/else-if
 chain determines audit behavior after RCA:
 
 ```
-1. IF files_to_change > 5 OR cross_module_impact OR public_api_change:
-     → Full audit loop (mandatory, up to 3 iterations)
+1. IF files_to_change > 5 OR cross-module impact OR public API change:
+     → Full audit loop (up to AUDIT_MAX_ITERATIONS iterations)
 
 2. ELSE IF any confidence dimension is MEDIUM or LOW:
-     → Full audit loop (up to 3 iterations)
+     → Full audit loop
 
-3. ELSE IF any signal is "Complex Fix" (3+ files, 20+ lines, new tests needed):
-     → Single audit iteration only
+3. ELSE IF signal is concurrency, performance, or dependency:
+     → Single audit iteration minimum (these fix types are high-risk)
+     → If approved on first pass → proceed to Phase 5
+     → If findings exist → run up to 2 more iterations
 
-4. ELSE (all signals "Simple Fix" AND all confidence HIGH):
-     → Skip audits entirely, proceed to Phase 5
-     → Simple fixes exit early (~30m), freeing the session slot
+4. ELSE IF any complex signal (3+ files, 20+ lines, new tests needed):
+     → Single audit iteration
+     → If approved on first pass → proceed to Phase 5
+     → If findings exist → run up to 2 more iterations
+
+5. ELSE (all simple AND all confidence HIGH AND signal is default,
+   regression-with-clear-root-cause, or environment):
+     → Skip audit entirely, proceed to Phase 5
 ```
+
+Signal type floors (rule 3) prevent high-risk fix types from skipping
+audit even if the file/line count looks simple.
+
+The gate is governed by two env vars: if `AUDIT_ENABLED=false`, all
+auditing is skipped regardless of complexity. If `AUDIT_SKIP_SIMPLE=true`
+(default), rule 5 allows simple fixes to skip audit.
 
 All fix sessions use `FIX_SESSION_TTL=150m` regardless of complexity
 class. The routing gate controls audit behavior only, not TTL.
@@ -370,34 +384,35 @@ a state, and transitions are atomic (remove old + add new in one call).
      ┌─────────────────┐                ┌─────────────────┐
      │ bot-missing-info │                │ bot-in-progress  │
      │ (no repo URL)   │                │ (fix agent       │
-     │                 │                │  working)        │
-     └────────┬────────┘                └────────┬─────────┘
-              │                                  │
-              │ user adds info                   ▼
-              │ & removes label        ┌─────────────────────┐
-              │ (re-enters autofix     │ bot-ready-for-review │
-              │  queue, watcher        │ (PR created)         │
-              │  re-picks ticket)      └────────┬────────────┘
-              │                                 │
-              └──► back to autofix ◄────────────┤
-                   (normal flow)                │
-                                  ┌─────────────┼───────────────┐
-                                  ▼                             ▼
-                         ┌────────────────┐           ┌─────────────────────┐
-                         │ bot-review-fix │           │ bot-review-complete  │
-                         │ (max 3 cycles) │           │ (await human merge)  │
-                         └───────┬────────┘           └────────┬────────────┘
-                                 │                             │
-                                 │ fix + re-queue              │ human merges
-                                 │ (back to                    ▼
-                                 │  bot-ready-for-review) ┌─────────────────┐
-                                 └───────────────────────►│   bot-merged    │
-                                   ▲                      └─────────────────┘
-                                   │
-                                   └── loops back to bot-ready-for-review
-                                       (NOT to bot-merged)
+     │ watcher auto-   │                │  working)        │
+     │ checks each     │                └────────┬─────────┘
+     │ cycle; removes  │                         │
+     │ label when URL  │                         ▼
+     │ found           │               ┌─────────────────────┐
+     └────────┬────────┘               │ bot-ready-for-review │
+              │                        │ (PR created)         │
+              │ URL detected →         └────────┬────────────┘
+              │ re-enters queue                 │
+              │                   ┌─────────────┼───────────────┐
+              │                   ▼                             ▼
+              │          ┌────────────────┐           ┌─────────────────────┐
+              │          │ bot-review-fix │           │ bot-review-complete  │
+              │          │ (max 3 cycles) │           │ (await human merge)  │
+              │          └───────┬────────┘           └────────┬────────────┘
+              │                  │                             │
+              │                  │ fix + re-queue              │ human merges
+              │                  │ (back to                    │ OR PR closed
+              │                  │  bot-ready-for-review)      ▼
+              │                  └──────────────────┐   ┌─────────────────┐
+              │                                     │   │   bot-merged    │
+              │                                     │   └─────────────────┘
+              │                                     │
+              └──► back to autofix queue ◄──────────┘
 
-     Any stage ──────────────────────────────────────► bot-fix-failed
+     Any stage + bot-cancelled ──────────────────► bot-fix-failed
+     Any failure ────────────────────────────────► bot-fix-failed
+     bot-fix-failed + bot-retry ─────────────────► bot-in-progress (max 2 retries)
+     no-autofix ─────────────────────────────────► excluded from all JQL queries (opt-out)
 ```
 
 ## Cross-Workflow Communication
@@ -415,11 +430,15 @@ coordination happens through **structured Jira comments** and **labels**.
 | `## Audit — Iteration N Starting` | Fix Agent | — | Heartbeat: timestamp, plan version, remaining TTL |
 | `## Fix Plan (vN — Iteration N Revision)` | Fix Agent | — | Revised plan with findings addressed, convergence |
 | `## Fix Plan (v* — APPROVED)` | Fix Agent | Review Agent | Final audited plan |
-| `## Fix Applied` | Fix Agent | Review, Review-Fix, Watcher | PR URL, branch, changes, session |
+| `## Fix Applied` | Fix Agent | Review, Review-Fix, Watcher | PR URL, branch, changes + telemetry footer (model, duration, Fix Confidence, Validation, RTK savings) |
+| `## Fix Failed` | Fix Agent | Watcher | Failure details + partial telemetry (model, duration, phase reached, partial validation) |
 | `## Agent Code Review` | Review Agent | Review-Fix, Watcher | Findings, verdict, cycle count |
+| `## Plan Compliance Failed` | Review Agent | Watcher | Unplanned/missing files, divergence from audited plan |
 | `## Review-Fix Cycle N/3` | Review-Fix | Review, Watcher | Addressed findings, cycle N |
+| `## Review-Fix Failed` | Review-Fix | Watcher | Unresolved findings, cycle N/3, test status |
 | `## PR Merged` | Watcher | — | Merge commit SHA, merged-by |
-| `## Fix Failed` | Fix Agent | Watcher | Failure details, phase reached, partial telemetry |
+| `## Pipeline Cancelled` | Watcher | — | Cancellation acknowledgement, retry/opt-out instructions |
+| `## PR Closed Without Merge` | Watcher | — | Closed PR details, retry instructions |
 
 ### PR Frontmatter
 
@@ -530,6 +549,7 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | `MAX_CONCURRENT_REVIEW_FIX_SESSIONS` | 2 | Parallel review-fix sessions |
 | `JIRA_POLL_INTERVAL` | 20 | Minutes between watcher cycles |
 | `REVIEW_FIX_MAX_CYCLES` | 3 | Max review-fix iterations |
+| `MAX_FIX_RETRIES` | 2 | Max retry attempts for failed fixes (user adds bot-retry) |
 | `RTK_ENABLED` | false | RTK token optimization (opt-in) |
 | `AUDIT_ENABLED` | true | Master switch for design audit loop |
 | `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
@@ -543,7 +563,17 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 {
   "watched_projects": ["PROJ1", "PROJ2"],
   "skill_url_allowlist": [
-    "https://raw.githubusercontent.com/org/*/main/.claude/skills/*"
+    "https://raw.githubusercontent.com/org/*/main/.claude/skills/*",
+    "https://raw.githubusercontent.com/org/*/.claude/skills/*"
+  ],
+  "knowledge_repo_allowlist": [
+    "https://github.com/org/team-docs",
+    "https://github.com/org/architecture-docs"
+  ],
+  "allowed_repo_hosts": [
+    "github.com",
+    "gitlab.com",
+    "gitlab.cee.redhat.com"
   ],
   "bot_service_account": "bot-autofix"
 }
@@ -617,11 +647,17 @@ issue-fix-agent/
 │   ├── jira-watcher/                      # Cron orchestrator (Sonnet, 15m)
 │   │   ├── ambient.json
 │   │   ├── CLAUDE.md
-│   │   └── skills/jira-watcher.md         # 5-phase polling
+│   │   └── skills/jira-watcher.md         # 8-phase polling + TTL awareness
 │   ├── issue-fix/                         # Fix agent (Opus, 150m)
 │   │   ├── ambient.json
 │   │   ├── CLAUDE.md
-│   │   └── skills/issue-fix.md            # 10 phases + audit loop (4A-4B)
+│   │   └── skills/
+│   │       ├── issue-fix.md               # 10 phases + audit loop (4A-4B)
+│   │       ├── investigation-strategies.md # Signal-specific investigation strategies
+│   │       └── audit-prompts/             # Sub-agent review criteria
+│   │           ├── architecture.md
+│   │           ├── pe.md
+│   │           └── language-expert.md
 │   ├── issue-review/                      # Review agent (Sonnet, 30m)
 │   │   ├── ambient.json
 │   │   ├── CLAUDE.md
@@ -635,8 +671,11 @@ issue-fix-agent/
 └── docs/
     ├── Architecture.md                    # This file
     ├── setup-and-testing.md               # Setup guide + test scenarios
+    ├── TODO-architecture-review-findings.md # Prioritized improvement backlog
     ├── TODO-cost-telemetry.md             # Cost & telemetry tracking plan
-    └── TODO-design-audit-rounds.md        # Audit loop design (4x audited)
+    ├── TODO-design-audit-rounds.md        # Audit loop design (4x audited)
+    └── plans/
+        └── TEMPLATE.md                    # Per-ticket plan doc template
 ```
 
 ## Design Decisions
