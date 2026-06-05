@@ -9,12 +9,10 @@
 
 ## Jira Integration
 
-The plan doc and Jira ticket are linked:
-- **Jira → Plan**: the fix agent posts a link to this plan doc in a Jira
-  comment when the plan is created (Phase 4A)
 - **Plan → Jira**: this doc references the ticket key and PR URL
-- **Jira comments** (`## Fix Plan`, `## Fix Applied`, `## Fix Failed`)
-  contain summaries; this plan doc contains the full audit trail
+- **Jira → Plan**: Jira comments (`## Fix Plan`, `## Fix Applied`,
+  `## Fix Failed`) contain summaries; this plan doc contains the full
+  audit trail with per-round findings and false positive tracking
 
 ---
 
@@ -45,7 +43,7 @@ Any blockers, prerequisites, or related tickets.
 ### Round 1
 
 **Date**: <date>
-**Reviewers**: Architecture, PE, SDLC Expert, Agent Expert (4 independent agents)
+**Reviewers**: Architecture, PE, SDLC Expert, Agent Expert (4 independent reviewers)
 
 | Reviewer | Verdict | Findings | Real Issues | False Positives |
 |----------|---------|----------|-------------|-----------------|
