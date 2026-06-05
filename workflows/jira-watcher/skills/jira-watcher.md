@@ -83,7 +83,10 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    - `**Repository**:` (REQUIRED)
    - `**Branch**:` (optional)
    - `**Commit**:` (optional)
-   - `**Skill**:` (optional)
+   - `**Skills**:` (optional — bulleted list of guidance URLs, max 5)
+     Also accept `**Skill**:` (singular) for backward compatibility.
+     Merge both into a single list, dedup by URL, cap at 5.
+   - `**Knowledge Repo**:` (optional — separate repo for domain context)
 
 2. **Validate Repository URL** (if found):
    The extracted repo URL must pass ALL checks:
@@ -118,7 +121,8 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
      Optional fields that help the agent:
      - **Branch**: Target branch (defaults to repo's default branch)
      - **Commit**: Specific commit SHA to investigate
-     - **Skill**: URL to domain-specific guidance (must be from an allowed source)
+     - **Skills**: URLs to domain-specific guidance (bulleted list, max 5)
+     - **Knowledge Repo**: URL to a context repository (must be allowlisted)
 
      Please add these to the ticket description or as a comment.
      The bot will detect the information automatically and re-queue
@@ -151,13 +155,15 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    a Jira comment: "Session creation failed — ticket returned to queue."
    Then skip to the next ticket.
 
-   Include the ticket key, parsed config fields, the skill URL allowlist,
-   AND the allowed repo hosts from `config/projects.json` in the prompt
-   so the fix agent has all context without needing access to the watcher's
-   config files:
+   Include the ticket key, parsed config fields, all allowlists, and
+   allowed repo hosts from `config/projects.json` in the prompt so the
+   fix agent has all context without needing access to the watcher's
+   config files. Knowledge Repo URL goes ONLY in the prompt text, NEVER
+   in the `repos` array (the fix agent clones it manually with hardened
+   git config):
    ```json
    {
-     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URL: <skill_url or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nAUDIT_ENABLED: <AUDIT_ENABLED from config.env, default true>\nAUDIT_MAX_ITERATIONS: <AUDIT_MAX_ITERATIONS from config.env, default 3>\nAUDIT_SKIP_SIMPLE: <AUDIT_SKIP_SIMPLE from config.env, default true>\nAUDIT_MODEL: <AUDIT_MODEL from config.env, default claude-sonnet-4-6>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
+     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URLs: <comma-separated URLs or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nAllowed Repo Hosts: <comma-separated from projects.json>\nKnowledge Repo: <url or 'none'>\nKnowledge Repo Allowlist: <comma-separated from projects.json>\nAUDIT_ENABLED: <AUDIT_ENABLED from config.env, default true>\nAUDIT_MAX_ITERATIONS: <AUDIT_MAX_ITERATIONS from config.env, default 3>\nAUDIT_SKIP_SIMPLE: <AUDIT_SKIP_SIMPLE from config.env, default true>\nAUDIT_MODEL: <AUDIT_MODEL from config.env, default claude-sonnet-4-6>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
      "name": "fix-<ticket-key-lower>",
      "labels": {
        "jira-ticket": "<TICKET-KEY>",
