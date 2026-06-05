@@ -4,7 +4,7 @@ description: "Automated code review skill for Ambient Platform. Adapted from
   AAP SDLC Harness code-review (3-lens methodology, evidence gate, validation
   chain) + review-pr-workflow (orchestration). Sequential single-pass mode.
   Does NOT approve PRs."
-version: "1.1"
+version: "1.1.0"
 type: review
 ---
 

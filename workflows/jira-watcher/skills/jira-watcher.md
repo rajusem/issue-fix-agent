@@ -4,7 +4,7 @@ description: "Polls Jira for autofix tickets and dispatches Ambient sessions.
   Runs as a short-lived cron session with 8 phases: new tickets, reviews,
   review-fixes, post-merge, cancellation, stale cleanup, missing info
   re-check, and retry."
-version: "1.0"
+version: "1.1.0"
 type: workflow
 ---
 

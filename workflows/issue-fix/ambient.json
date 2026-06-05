@@ -1,5 +1,5 @@
 {
   "name": "issue-fix",
   "description": "Automated issue fixing agent. Reads a Jira ticket, clones the target repo, investigates the issue, implements a fix, creates a PR, and updates Jira.",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

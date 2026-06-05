@@ -1,5 +1,5 @@
 {
   "name": "issue-review",
   "description": "Automated code review agent. Reviews PRs created by the issue-fix agent using a 3-lens methodology (correctness, security, quality). Posts findings to PR and Jira.",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

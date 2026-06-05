@@ -3,7 +3,7 @@ name: review-fix
 description: "Addresses code review findings from the issue-review agent.
   Reads PR review comments, implements fixes, pushes to same branch,
   and sends back for re-review. Max 3 cycles."
-version: "1.1"
+version: "1.1.0"
 type: workflow
 ---
 

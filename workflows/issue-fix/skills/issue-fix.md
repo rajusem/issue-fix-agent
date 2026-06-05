@@ -3,7 +3,7 @@ name: issue-fix
 description: "Automated issue fixing skill for Ambient Platform. Adapted from
   AAP SDLC Harness bugfix-workflow + jira-integration + git-workflow for
   unattended operation. No human confirmation gates."
-version: "1.0"
+version: "1.1.0"
 type: workflow
 ---
 
@@ -995,7 +995,7 @@ If at any point you cannot proceed:
    |-------|--------|
    | <checks completed so far> | <results> |
 
-   To retry with a different approach, add the `bot-retry` label.
+   To retry with a different approach, add the `bot-retry` label (max 2 retries).
    ```
 6. Do NOT create a partial PR.
 7. Phase-aware cleanup:
