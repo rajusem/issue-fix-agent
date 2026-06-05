@@ -205,20 +205,20 @@ Edit `config/projects.json`:
   "skill_url_allowlist": [
     "https://raw.githubusercontent.com/rajusem/*/main/.claude/skills/*"
   ],
+  "knowledge_repo_allowlist": [],
+  "allowed_repo_hosts": [
+    "github.com"
+  ],
   "bot_service_account": "<your-bot-account-or-your-username>"
 }
 ```
 
+`allowed_repo_hosts` is **required** — the watcher stops processing if
+this field is missing or empty.
+
 Edit `config/config.env`:
 ```
 JIRA_SITE=stage-redhat.atlassian.net
-```
-
-Edit `config/projects.json` — set your watched project:
-```json
-{
-  "watched_projects": ["OBSINTA"]
-}
 ```
 
 ---
@@ -449,7 +449,7 @@ pre-screening, and shows the session it would create. No labels changed.
 
 **Steps**:
 1. Create a fresh test ticket with `autofix` label and repo URL
-2. Run the full watcher skill (all 5 phases)
+2. Run the full watcher skill (all 8 phases)
 3. Monitor the dispatched fix session
 4. Wait for the fix → review → (optional review-fix) → review-complete cycle
 
@@ -495,12 +495,13 @@ In Ambient, view session logs at:
 Before running on real tickets:
 
 - [ ] MCP tool inventory verified (Part 2) — all tools work or fallbacks confirmed
-- [ ] All 7 tests passed
+- [ ] All tests passed (Parts 4, 7, and 8)
 - [ ] `config/projects.json` updated with real project keys
+- [ ] `allowed_repo_hosts` configured in `config/projects.json` (required)
 - [ ] GitHub App configured (not PAT) for production repos
 - [ ] Slack webhook configured for notifications
 - [ ] Ambient cron schedule set up for watcher (recommended: every 20 min)
-- [ ] Team briefed on label conventions (`autofix`, `bot-*` labels)
+- [ ] Team briefed on label conventions (`autofix`, `bot-*`, `no-autofix`, `bot-retry`, `bot-cancelled`)
 - [ ] Jira ticket template shared with team (Agent Configuration section)
 - [ ] Concurrency limits reviewed in `config.env` (MAX_CONCURRENT_FIX_SESSIONS=4)
 - [ ] TTLs reviewed (150 min fix, 30 min review, 45 min review-fix)
@@ -642,3 +643,60 @@ workflow. Run after verifying the basic fix pipeline (Part 4).
    floors at single audit iteration minimum even though file/line
    count would normally skip audit
 5. **Verify**: Audit runs despite simple fix (concurrency signal floor)
+
+---
+
+## Part 8: Label Lifecycle Test Scenarios
+
+These test the label lifecycle features: cancellation, auto-recovery,
+and retry.
+
+### Test 19: Missing Info Auto-Recovery
+
+**Goal**: Verify the watcher auto-detects added repo URL without manual
+label removal.
+
+1. Create a ticket with `autofix` label but NO repo URL in description
+2. Run the watcher — ticket gets `bot-missing-info` label + comment
+3. Add a valid repo URL to the ticket description (or as a plain comment
+   — not starting with a `##` header, which the watcher skips)
+4. Run the watcher again
+5. **Expected**: Watcher Phase 7 detects the URL, removes `bot-missing-info`,
+   posts "Repository URL detected. Ticket re-queued for processing."
+6. Run watcher a third time — ticket is picked up by Phase 1 normally
+
+### Test 20: Retry Failed Fix
+
+**Goal**: Verify bot-retry triggers re-processing of a failed ticket.
+
+**Prerequisite**: A ticket in `bot-fix-failed` state (from Test 3 failure
+or manual label).
+
+1. Add `bot-retry` label to the failed ticket
+2. Run the watcher
+3. **Expected**: Watcher Phase 8 removes `bot-fix-failed` + `bot-retry`,
+   adds `bot-in-progress`, dispatches a new fix session with retry context
+4. **Verify**: Fix agent reads prior `## Fix Failed` comments and uses
+   them as negative constraints
+5. **Verify**: After 3 total `## Fix Failed` comments (the watcher
+   subtracts 1 for the initial attempt → 2 retries = MAX_FIX_RETRIES),
+   watcher posts "Maximum retries (2) reached. This ticket needs human
+   intervention." and removes `bot-retry` without dispatching a new session
+
+### Test 21: Human Cancellation
+
+**Goal**: Verify bot-cancelled stops active sessions and cleans up labels.
+
+**Prerequisite**: A ticket in `bot-in-progress` state with an active
+fix session.
+
+1. Add `bot-cancelled` label to the ticket
+2. Run the watcher
+3. **Expected**: Watcher Phase 5 stops active sessions (or notes they
+   will expire at TTL), removes `bot-cancelled`, `bot-in-progress`,
+   `bot-ready-for-review`, `bot-review-fix`, `bot-review-complete`, and
+   `bot-retry`, then adds `bot-fix-failed`. Posts `## Pipeline Cancelled`.
+4. **Verify** (when `no-autofix` is NOT present): Comment offers retry
+   (`bot-retry`) and opt-out (`no-autofix`)
+5. **Edge case**: Add both `bot-cancelled` and `no-autofix` — verify
+   comment says "Ticket is opted out of automation" without retry hint
