@@ -29,6 +29,12 @@ prevent recurrence.
 - `mcp__atlassian__addCommentToJiraIssue` — add comments
 - `mcp__atlassian__transitionJiraIssue` — status transitions
 
+After every label swap via `editJiraIssue`, re-fetch the ticket to verify
+the expected labels are present. If inconsistent, retry once before
+following Failure Protocol. If the verification re-fetch itself fails
+(network/timeout error), log a warning and continue — do not trigger
+Failure Protocol for a transient verification failure.
+
 If `mcp__atlassian__editJiraIssue` is not available for label operations,
 fall back to `curl` with Basic Auth (`$JIRA_USERNAME` / `$JIRA_API_TOKEN`):
 ```bash
@@ -127,6 +133,22 @@ Phase 0 is intentionally minimal to avoid wasting context. MCP accessibility
 is validated by Entry Gate 1 (Jira ticket fetch). Git identity is validated
 at `git commit` time (Phase 9). Optional tools (gitleaks, pre-commit) are
 checked lazily when needed (Phase 6).
+
+## Retry Context
+
+If the session prompt contains "This is retry" followed by a number greater
+than 0 (e.g., "This is retry 1"), this is a retry of a previously failed
+fix attempt. Before proceeding to Phase 1:
+
+1. Read all `## Fix Failed` comments from the Jira ticket to understand
+   what was previously attempted and why it failed.
+2. Read any prior `## Fix Plan` comments to see what approaches were tried.
+3. Use these as **negative constraints** in Phase 3 (investigation) and
+   Phase 4A (plan): approaches that were already tried and failed should be
+   listed in the Alternatives Considered table with the failure reason.
+4. If all prior attempts failed in the same phase with the same root cause,
+   and you cannot identify a different approach, follow the Failure Protocol
+   immediately rather than repeating the same attempt.
 
 ## Phase 1: Understand
 
@@ -739,12 +761,13 @@ After exiting the audit loop:
    LLM judgment might miss. Uses basename matching (not full path) to
    avoid false positives on directory names like `secrets/config.go`:
    ```bash
+   set -f  # disable glob expansion so *.pem is treated as a pattern, not expanded
    SENSITIVE_PATTERNS=".env .env.local .env.production credentials.json token.json .git-credentials .netrc .npmrc .pypirc kubeconfig terraform.tfvars"
    SENSITIVE_GLOBS="*.pem *.key *.p12 *.pfx *.jks *.asc *.secret *.secrets secrets.yaml secrets.json"
    SENSITIVE_SSH="id_rsa id_dsa id_ed25519 id_ecdsa"
    ALL_PATTERNS="$SENSITIVE_PATTERNS $SENSITIVE_GLOBS $SENSITIVE_SSH"
    BLOCKED=""
-   git diff --cached --name-only | while IFS= read -r file; do
+   while IFS= read -r file; do
      base=$(basename "$file")
      for pat in $ALL_PATTERNS; do
        if [[ "$base" == $pat ]]; then
@@ -753,11 +776,12 @@ After exiting the audit loop:
          BLOCKED="$BLOCKED $file"
        fi
      done
-   done
+   done < <(git diff --cached --name-only)
+   set +f  # re-enable glob expansion
    ```
-   If any files were blocked: log a warning in the Jira milestone comment.
-   This is a soft block — unstage the file and continue. The commit
-   proceeds with remaining staged files.
+   If any files were blocked (`BLOCKED` is non-empty): log a warning in
+   the Jira milestone comment. This is a soft block — unstage the file
+   and continue. The commit proceeds with remaining staged files.
 
    Update `.audit/validation.json`:
    - `sensitive_files_check`: "passed" (no matches) or "blocked" (files unstaged)
@@ -972,6 +996,8 @@ If at any point you cannot proceed:
    | Check | Result |
    |-------|--------|
    | <checks completed so far> | <results> |
+
+   To retry with a different approach, add the `bot-retry` label.
    ```
 6. Do NOT create a partial PR.
 7. Phase-aware cleanup:

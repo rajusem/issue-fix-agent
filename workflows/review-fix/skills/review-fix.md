@@ -25,6 +25,12 @@ finding, and pushes fixes to the same PR branch. No human confirmation.
 - `mcp__atlassian__editJiraIssue` — update labels (use for label swaps)
 - `mcp__atlassian__addCommentToJiraIssue` — add comments
 
+After every label swap via `editJiraIssue`, re-fetch the ticket to verify
+the expected labels are present. If inconsistent, retry once before
+following Failure Protocol. If the verification re-fetch itself fails
+(network/timeout error), log a warning and continue — do not trigger
+Failure Protocol for a transient verification failure.
+
 ## Ambient Workspace
 
 The session may be created with a `repos` field that auto-clones the repo.
@@ -152,19 +158,23 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
 4. **Sensitive file blocklist** — run AFTER staging, BEFORE commit.
    Check staged files against deterministic patterns (basename matching):
    ```bash
+   set -f  # disable glob expansion so *.pem is treated as a pattern
    SENSITIVE_PATTERNS=".env .env.local .env.production credentials.json token.json .git-credentials .netrc .npmrc .pypirc kubeconfig terraform.tfvars"
    SENSITIVE_GLOBS="*.pem *.key *.p12 *.pfx *.jks *.asc *.secret *.secrets secrets.yaml secrets.json"
    SENSITIVE_SSH="id_rsa id_dsa id_ed25519 id_ecdsa"
    ALL_PATTERNS="$SENSITIVE_PATTERNS $SENSITIVE_GLOBS $SENSITIVE_SSH"
-   git diff --cached --name-only | while IFS= read -r file; do
+   BLOCKED=""
+   while IFS= read -r file; do
      base=$(basename "$file")
      for pat in $ALL_PATTERNS; do
        if [[ "$base" == $pat ]]; then
          echo "BLOCKED: $file matches sensitive pattern $pat"
          git reset HEAD -- "$file"
+         BLOCKED="$BLOCKED $file"
        fi
      done
-   done
+   done < <(git diff --cached --name-only)
+   set +f
    ```
    Soft block: unstage matched files, warn, continue with remaining files.
 5. Commit with conventional format and AI attribution:
@@ -237,5 +247,6 @@ If findings cannot be addressed or tests fail persistently:
    **Action Needed**: Human developer needs to address remaining findings
 
    The existing PR remains open for manual intervention.
+   To retry with a fresh fix attempt, add the `bot-retry` label.
    ```
 3. Do NOT delete the branch or close the PR.

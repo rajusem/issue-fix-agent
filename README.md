@@ -42,7 +42,7 @@ compatibility.
 | Label | Meaning |
 |-------|---------|
 | `autofix` | Permanent marker — ticket should be handled by automation |
-| `bot-missing-info` | Ticket missing required info (repo URL) — user removes after adding |
+| `bot-missing-info` | Ticket missing required info — bot re-checks automatically each cycle |
 | `bot-in-progress` | Fix agent is working on it |
 | `bot-ready-for-review` | PR created, awaiting agent review |
 | `bot-review-fix` | Review found issues, review-fix agent is addressing them |
@@ -50,6 +50,8 @@ compatibility.
 | `bot-merged` | PR merged, ticket ready for manual close |
 | `bot-fix-failed` | Agent could not fix — needs human attention |
 | `no-autofix` | Opt-out — ticket excluded from automation while keeping `autofix` label |
+| `bot-retry` | Retry — user adds to `bot-fix-failed` ticket to trigger re-processing (max 2) |
+| `bot-cancelled` | Human override — stops active sessions, returns ticket to failed state |
 
 ## Project Structure
 

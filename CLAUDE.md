@@ -25,10 +25,14 @@ Jira (autofix label) → Watcher → Fix Agent → Review Agent ↔ Review-Fix A
 autofix (permanent)
   ↓ (missing repo URL)           ↓ (repo URL found)
   bot-missing-info                bot-in-progress → bot-ready-for-review → bot-review-complete → bot-merged
-  (user removes after                           ↘ bot-fix-failed     ↑
-   adding info)                                                 bot-review-fix (max 3 cycles)
+  (auto re-check: URL found                     ↘ bot-fix-failed     ↑
+   → removes label                                ↑ (user adds    bot-review-fix (max 3 cycles)
+   → re-enters queue)                             ↑  bot-retry)
+                                                  bot-fix-failed → bot-in-progress (retry, max 2)
 
 no-autofix — opt-out: ticket excluded from automation while keeping autofix label
+bot-retry — user adds to bot-fix-failed ticket to trigger re-processing (max 2 retries)
+bot-cancelled — human override: stops active sessions, moves to bot-fix-failed
 ```
 
 ## Security
@@ -67,6 +71,10 @@ Workflows communicate through Jira comments with specific formats:
 | `## Fix Plan (v* — APPROVED)` | issue-fix | issue-review | Final audited plan for compliance check |
 | `## Audit — Iteration N Starting` | issue-fix | — | Heartbeat: timestamp, plan version, remaining TTL |
 | `## Fix Plan (vN — Iteration N Revision)` | issue-fix | — | Revised plan with findings addressed, convergence |
+| `## Plan Compliance Failed` | issue-review | jira-watcher | Unplanned/missing files, divergence from audited plan |
+| `## Review-Fix Failed` | review-fix | jira-watcher | Unresolved findings, cycle N/3, test status |
+| `## Pipeline Cancelled` | jira-watcher | — | Cancellation acknowledgement, retry/opt-out instructions |
+| `## PR Closed Without Merge` | jira-watcher | — | Closed PR details, retry instructions |
 
 PR body frontmatter: `<!-- issue-fix-agent:jira=<KEY> session=<NAME> -->`
 is used by the watcher to link merged PRs back to Jira tickets.

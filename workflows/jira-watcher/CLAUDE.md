@@ -15,7 +15,7 @@ You are an automated watcher agent running in an Ambient Platform session. You a
 
 ## Workflow
 
-Follow the `jira-watcher.md` skill in `skills/` for the complete 5-phase workflow.
+Follow the `jira-watcher.md` skill in `skills/` for the complete 8-phase workflow.
 
 ## Key Constraints
 
