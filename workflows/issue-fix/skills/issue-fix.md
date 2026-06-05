@@ -399,13 +399,18 @@ traceability and enables the review agent's plan compliance check.
 
 3. Count planned files and lines to change for the complexity gate.
 
-4. Post the plan to Jira via `mcp__atlassian__addCommentToJiraIssue`:
+4. Create the plan doc at `docs/plans/<JIRA_PROJECT>/<TICKET-KEY>.md`
+   using the template from `docs/plans/TEMPLATE.md`. Fill in Context,
+   Plan, and Files to Modify sections. Set Status to "Draft".
+
+5. Post the plan to Jira via `mcp__atlassian__addCommentToJiraIssue`:
    ```
    ## Fix Plan (v1)
    **Approach**: <one-line summary>
    **Files**: N files to change
    **Risk**: Low/Medium/High
    **Confidence**: HIGH/MEDIUM/LOW
+   **Plan doc**: docs/plans/<JIRA_PROJECT>/<TICKET-KEY>.md
    **Status**: Awaiting complexity gate
    ```
 
