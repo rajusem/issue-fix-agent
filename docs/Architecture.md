@@ -571,9 +571,7 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
     "https://github.com/org/architecture-docs"
   ],
   "allowed_repo_hosts": [
-    "github.com",
-    "gitlab.com",
-    "gitlab.cee.redhat.com"
+    "github.com"
   ],
   "bot_service_account": "bot-autofix"
 }

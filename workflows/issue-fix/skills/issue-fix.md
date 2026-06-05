@@ -189,17 +189,14 @@ fix attempt. Before proceeding to Phase 1:
      if which rtk >/dev/null 2>&1; then
        # Backup settings before RTK modifies them
        cp .claude/settings.json .claude/settings.json.pre-rtk 2>/dev/null || true
-       # Install hook
-       rtk init
-       # Healthcheck: verify hook works
-       HEALTH_OUTPUT=$(echo "RTK_HEALTHCHECK" 2>&1)
-       if echo "$HEALTH_OUTPUT" | grep -q "RTK_HEALTHCHECK"; then
+       # Install hook — check exit code directly (single init, not double)
+       if rtk init; then
          RTK_WAS_ACTIVE=true
          RTK_VERSION=$(rtk --version 2>/dev/null || echo "unknown")
        else
-         # Hook failed — restore backup, continue without RTK
+         # rtk init failed — restore backup, continue without RTK
          cp .claude/settings.json.pre-rtk .claude/settings.json 2>/dev/null || true
-         echo "WARNING: RTK healthcheck failed, continuing without RTK"
+         echo "WARNING: RTK init failed, continuing without RTK"
        fi
      else
        echo "WARNING: RTK binary not found in image, skipping"

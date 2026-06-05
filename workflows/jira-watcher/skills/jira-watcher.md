@@ -40,7 +40,7 @@ Record the cycle start time at the beginning of the session:
 ```bash
 CYCLE_START=$(date +%s)
 ```
-Before each phase starting from Phase 5, check remaining time:
+Before **each phase** (including Phases 1-4), check remaining time:
 ```bash
 WATCHER_TTL=${WATCHER_SESSION_TTL:-15}
 ELAPSED=$(( $(date +%s) - CYCLE_START ))
@@ -49,6 +49,10 @@ REMAINING_MIN=$(( (WATCHER_TTL * 60 - ELAPSED) / 60 ))
 If `REMAINING_MIN < 3`: skip remaining phases and proceed directly to
 the Cycle Summary. Note skipped phases in the summary. This ensures the
 Slack notification is always posted even if earlier phases ran long.
+
+Within Phases 1-3, also check before each ticket iteration: if
+`REMAINING_MIN < 5`, skip remaining tickets in the current phase and
+move to the next phase.
 
 ## Label Swap Protocol
 
