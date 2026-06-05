@@ -42,8 +42,11 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 1. **Jira ticket accessible** — fetch via `mcp__atlassian__getJiraIssue`
 2. **`bot-ready-for-review` label present** — confirms proper dispatch
-3. **PR exists and is open** — not merged, not closed, not draft
-4. **PR has commits** — empty PRs are skipped
+3. **PR repo URL valid** — the repo URL extracted from the PR must start
+   with `https://` and not contain `@` or `..` (lightweight defense-in-depth;
+   full validation was done by the watcher at dispatch time)
+4. **PR exists and is open** — not merged, not closed, not draft
+5. **PR has commits** — empty PRs are skipped
 
 ## Phase 1: Fetch Context
 

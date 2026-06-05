@@ -49,6 +49,7 @@ compatibility.
 | `bot-review-complete` | Agent review passed, awaiting human approval |
 | `bot-merged` | PR merged, ticket ready for manual close |
 | `bot-fix-failed` | Agent could not fix — needs human attention |
+| `no-autofix` | Opt-out — ticket excluded from automation while keeping `autofix` label |
 
 ## Project Structure
 

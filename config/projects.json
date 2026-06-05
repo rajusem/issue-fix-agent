@@ -8,5 +8,10 @@
     "https://github.com/org/team-docs",
     "https://github.com/org/architecture-docs"
   ],
+  "allowed_repo_hosts": [
+    "github.com",
+    "gitlab.com",
+    "gitlab.cee.redhat.com"
+  ],
   "bot_service_account": "bot-autofix"
 }

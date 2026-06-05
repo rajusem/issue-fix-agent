@@ -25,6 +25,7 @@ After all phases, post a summary to Slack and exit.
 Read `config/projects.json` for:
 - `watched_projects` — Jira project keys to monitor
 - `skill_url_allowlist` — trusted skill URL patterns
+- `allowed_repo_hosts` — allowed repository hosts (e.g., `github.com`)
 - `bot_service_account` — service account to assign tickets to
 
 Read `config/config.env` for TTLs, models, and concurrency limits.
@@ -33,7 +34,7 @@ Read `config/config.env` for TTLs, models, and concurrency limits.
 
 ### Query
 ```
-JQL: labels = autofix AND labels NOT IN (bot-in-progress, bot-ready-for-review, bot-review-complete, bot-review-fix, bot-merged, bot-fix-failed, bot-missing-info) AND project IN (<WATCHED_PROJECTS>)
+JQL: labels = autofix AND labels NOT IN (bot-in-progress, bot-ready-for-review, bot-review-complete, bot-review-fix, bot-merged, bot-fix-failed, bot-missing-info, no-autofix) AND project IN (<WATCHED_PROJECTS>)
 ```
 
 Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
@@ -46,7 +47,27 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    - `**Commit**:` (optional)
    - `**Skill**:` (optional)
 
-2. **If Repository URL missing**:
+2. **Validate Repository URL** (if found):
+   The extracted repo URL must pass ALL checks:
+   - Starts with `https://` (reject `http://`, `ssh://`, `file://`, `git://`,
+     and scp-style `user@host:path`)
+   - Host is in `allowed_repo_hosts` from `config/projects.json`
+   - No credentials embedded in URL (no `user:pass@` or `token@` in authority)
+   - No path traversal (`..` in path)
+   - No query strings or fragments
+
+   If `allowed_repo_hosts` is missing or empty in projects.json, this is a
+   configuration error — log an error and skip ALL remaining tickets in this
+   cycle. Post to Slack: "Watcher error: allowed_repo_hosts not configured."
+
+   If the URL fails validation:
+   - Add `bot-missing-info` label
+   - Post comment: "## Missing Information\nRepository URL `<url>` failed
+     validation: <specific reason>.\nAllowed hosts: <allowed_repo_hosts>.\n
+     Please correct the URL and remove the `bot-missing-info` label."
+   - Skip this ticket.
+
+3. **If Repository URL missing** (not found in description or comments):
    - Add `bot-missing-info` label using `mcp__atlassian__editJiraIssue`
      (prevents re-picking this ticket on subsequent cycles)
    - Add Jira comment:
@@ -65,34 +86,35 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
      ```
    - Skip this ticket.
 
-3. **Check for existing active session**:
+4. **Check for existing active session**:
    - Query Ambient sessions with label `jira-ticket=<TICKET-KEY>`
    - If an active (non-terminal) session exists, skip this ticket.
 
-4. **Check concurrency limits**:
+5. **Check concurrency limits**:
    - Count active fix sessions (label `type=issue-fix` in non-terminal phases)
    - If at `MAX_CONCURRENT_FIX_SESSIONS`, skip remaining tickets.
 
-5. **Add `bot-in-progress` label** using `mcp__atlassian__editJiraIssue`
+6. **Add `bot-in-progress` label** using `mcp__atlassian__editJiraIssue`
    (state guard — do this BEFORE creating session)
 
-6. **Assign bot service account** to the ticket
+7. **Assign bot service account** to the ticket
 
-7. **Attempt Jira status transition** to "In Progress":
+8. **Attempt Jira status transition** to "In Progress":
    - Use `mcp__atlassian__transitionJiraIssue` if available
    - If transition fails due to missing gate fields (Sprint, Story Points, etc.),
      skip the transition and proceed with label-only tracking
    - Add Jira comment noting if transition was skipped
 
-8. **Create fix session** via Ambient `create_session` MCP.
+9. **Create fix session** via Ambient `create_session` MCP.
    **If session creation fails:** immediately remove `bot-in-progress`
    label via `mcp__atlassian__editJiraIssue` (rollback step 5) and add
    a Jira comment: "Session creation failed — ticket returned to queue."
    Then skip to the next ticket.
 
-   Include the ticket key, parsed config fields, AND the skill URL
-   allowlist from `config/projects.json` in the prompt so the fix agent
-   has all context without needing access to the watcher's config files:
+   Include the ticket key, parsed config fields, the skill URL allowlist,
+   AND the allowed repo hosts from `config/projects.json` in the prompt
+   so the fix agent has all context without needing access to the watcher's
+   config files:
    ```json
    {
      "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URL: <skill_url or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nAUDIT_ENABLED: <AUDIT_ENABLED from config.env, default true>\nAUDIT_MAX_ITERATIONS: <AUDIT_MAX_ITERATIONS from config.env, default 3>\nAUDIT_SKIP_SIMPLE: <AUDIT_SKIP_SIMPLE from config.env, default true>\nAUDIT_MODEL: <AUDIT_MODEL from config.env, default claude-sonnet-4-6>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
@@ -107,13 +129,13 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    }
    ```
 
-9. **Add Jira comment** with session link:
-   ```
-   ## Agent Session Started
-   **Session**: [fix-<ticket-key>](<session_url>)
-   **Model**: <model>
-   **Started**: <timestamp>
-   ```
+10. **Add Jira comment** with session link:
+    ```
+    ## Agent Session Started
+    **Session**: [fix-<ticket-key>](<session_url>)
+    **Model**: <model>
+    **Started**: <timestamp>
+    ```
 
 ## Phase 2: Review Dispatch
 

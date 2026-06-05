@@ -51,7 +51,33 @@ add a comment explaining the failure, then exit.
 3. **Repository URL available** — parse description and comments for the
    `**Repository**:` field. If not found, exit with `bot-fix-failed` and
    comment "Repository URL not found in ticket."
-4. **Issue description identifiable** — the ticket must have enough context
+4. **Repository URL valid** — the URL from the watcher prompt (or parsed
+   from the ticket) must pass ALL checks:
+   - Starts with `https://` (reject `http://`, `ssh://`, `file://`, `git://`)
+   - Host is in `allowed_repo_hosts` (passed by watcher from projects.json)
+   - No credentials embedded (`@` in the authority portion)
+   - No path traversal (`..` in path)
+   If `allowed_repo_hosts` is missing or empty, fail-closed: exit with
+   `bot-fix-failed` and comment "Configuration error — allowed_repo_hosts
+   not configured."
+   If the URL fails validation, exit with `bot-fix-failed` and comment
+   "Repository URL failed validation: <specific reason>."
+5. **Branch/commit inputs sanitized** — if the `**Branch**:` field was
+   parsed from the ticket, validate it:
+   ```bash
+   if echo "$BRANCH_FROM_TICKET" | grep -qE '(^-|\.\.|@\{|[;|$`])'; then
+     echo "ERROR: Invalid branch name from ticket"
+     # Follow failure protocol
+   fi
+   ```
+   If the `**Commit**:` field was parsed, validate the SHA format:
+   ```bash
+   if ! echo "$COMMIT_SHA" | grep -qE '^[0-9a-f]{7,40}$'; then
+     echo "ERROR: Invalid commit SHA format"
+     # Follow failure protocol
+   fi
+   ```
+6. **Issue description identifiable** — the ticket must have enough context
    to understand what needs fixing.
 
 ## Security
@@ -74,6 +100,33 @@ the existing checkout. Check with `ls` first.
 The environment variable `$AGENTIC_SESSION_NAME` contains the current
 session identifier (set by Ambient). Use it in PR frontmatter and Jira
 comments for traceability.
+
+## Phase 0: Environment Validation
+
+Run these checks BEFORE any Jira operations. If any critical check fails,
+exit immediately with `bot-fix-failed` label and a Jira comment listing
+the failures. This prevents wasting session TTL on a misconfigured
+environment.
+
+1. **GitHub token valid** — make a real API call (not just `gh auth status`,
+   which can return OK with expired/revoked tokens):
+   ```bash
+   gh api user --jq .login
+   ```
+   If exit code is non-zero: CRITICAL — PR creation and push will fail.
+   Post Jira comment: "Environment validation failed: GitHub token invalid
+   or expired." Then follow Failure Protocol.
+
+2. **Git available**:
+   ```bash
+   git --version
+   ```
+   If git is missing: CRITICAL — exit with Failure Protocol.
+
+Phase 0 is intentionally minimal to avoid wasting context. MCP accessibility
+is validated by Entry Gate 1 (Jira ticket fetch). Git identity is validated
+at `git commit` time (Phase 9). Optional tools (gitleaks, pre-commit) are
+checked lazily when needed (Phase 6).
 
 ## Phase 1: Understand
 
@@ -158,24 +211,37 @@ comments for traceability.
    ```bash
    ls -la  # Check if repo files exist in workspace
    ```
-   If not cloned, clone manually:
+   If not cloned, clone manually with protocol restrictions:
    ```bash
-   git clone <repo_url> work && cd work
+   git -c protocol.ext.allow=never -c protocol.file.allow=never \
+     clone -- <repo_url> work && cd work
    ```
-2. Determine base branch (from ticket or repo default).
-3. Create fix branch — deterministic, no confirmation:
+2. **Harden git config** — run unconditionally regardless of how the repo
+   was cloned (Ambient auto-clone or manual). This prevents execution of
+   malicious hooks and monitors from the target repository:
+   ```bash
+   git config core.hooksPath /dev/null
+   git config core.fsmonitor false
+   ```
+   Note: this disables the repo's native git hooks, NOT the `pre-commit`
+   framework. The agent's own `pre-commit run --all-files` in Phase 6
+   uses the pre-commit framework which is independent of `core.hooksPath`.
+3. Determine base branch (from ticket or repo default).
+4. Create fix branch — deterministic, no confirmation:
    ```bash
    SUMMARY_SLUG=$(echo "$SUMMARY" | tr -dc '[:alnum:] ' | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
    BRANCH=$(echo "${TICKET_KEY}/${SUMMARY_SLUG}" | head -c 60 | sed 's/-$//')
    git checkout -b "$BRANCH"
    ```
-4. Post Jira milestone comment: "Branch `$BRANCH` created."
-5. **Knowledge Repo Clone** (if a valid Knowledge Repo URL was parsed
+5. Post Jira milestone comment: "Branch `$BRANCH` created."
+6. **Knowledge Repo Clone** (if a valid Knowledge Repo URL was parsed
    in Phase 1):
    ```bash
-   timeout 120 git clone --depth 1 --single-branch \
-     --config core.hooksPath=/dev/null \
-     <knowledge_repo_url> .knowledge/
+   timeout 120 git \
+     -c protocol.ext.allow=never -c protocol.file.allow=never \
+     clone --depth 1 --single-branch \
+     --config core.hooksPath=/dev/null --config core.fsmonitor=false \
+     -- <knowledge_repo_url> .knowledge/
    ```
    - If clone fails or times out: log warning, continue without it
    - Size check — if .knowledge/ exceeds 500MB, delete and skip:
@@ -668,7 +734,36 @@ After exiting the audit loop:
    ```bash
    git add path/to/changed/files
    ```
-4. Update `.audit/validation.json` with pre-commit result:
+4. **Sensitive file blocklist** — run AFTER staging, BEFORE commit.
+   Check staged files against deterministic patterns. This catches what
+   LLM judgment might miss. Uses basename matching (not full path) to
+   avoid false positives on directory names like `secrets/config.go`:
+   ```bash
+   SENSITIVE_PATTERNS=".env .env.local .env.production credentials.json token.json .git-credentials .netrc .npmrc .pypirc kubeconfig terraform.tfvars"
+   SENSITIVE_GLOBS="*.pem *.key *.p12 *.pfx *.jks *.asc *.secret *.secrets secrets.yaml secrets.json"
+   SENSITIVE_SSH="id_rsa id_dsa id_ed25519 id_ecdsa"
+   ALL_PATTERNS="$SENSITIVE_PATTERNS $SENSITIVE_GLOBS $SENSITIVE_SSH"
+   BLOCKED=""
+   git diff --cached --name-only | while IFS= read -r file; do
+     base=$(basename "$file")
+     for pat in $ALL_PATTERNS; do
+       if [[ "$base" == $pat ]]; then
+         echo "BLOCKED: $file matches sensitive pattern $pat"
+         git reset HEAD -- "$file"
+         BLOCKED="$BLOCKED $file"
+       fi
+     done
+   done
+   ```
+   If any files were blocked: log a warning in the Jira milestone comment.
+   This is a soft block — unstage the file and continue. The commit
+   proceeds with remaining staged files.
+
+   Update `.audit/validation.json`:
+   - `sensitive_files_check`: "passed" (no matches) or "blocked" (files unstaged)
+   - `sensitive_files_blocked`: list of blocked filenames (empty array if none)
+
+5. Update `.audit/validation.json` with pre-commit result:
    - `pre_commit_passed`: true/false/null (no hooks)
 
 ## Phase 7: Test

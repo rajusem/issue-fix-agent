@@ -27,6 +27,8 @@ autofix (permanent)
   bot-missing-info                bot-in-progress → bot-ready-for-review → bot-review-complete → bot-merged
   (user removes after                           ↘ bot-fix-failed     ↑
    adding info)                                                 bot-review-fix (max 3 cycles)
+
+no-autofix — opt-out: ticket excluded from automation while keeping autofix label
 ```
 
 ## Security

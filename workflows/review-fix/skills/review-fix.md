@@ -32,6 +32,22 @@ If the repo is already in the workspace, use `gh pr checkout` to switch to
 the PR branch. The environment variable `$AGENTIC_SESSION_NAME` contains the
 session identifier.
 
+## Phase 0: Environment Validation
+
+Run before any Jira operations. If any check fails, exit with
+`bot-fix-failed` and a Jira comment listing the failure.
+
+1. **GitHub token valid**:
+   ```bash
+   gh api user --jq .login
+   ```
+   If non-zero: CRITICAL — push will fail. Follow Failure Protocol.
+
+2. **Git available**:
+   ```bash
+   git --version
+   ```
+
 ## Entry Gates
 
 Verify before starting — if any gate fails, follow the Failure Protocol.
@@ -39,7 +55,10 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 1. **Jira ticket accessible** — fetch via `mcp__atlassian__getJiraIssue`
 2. **`bot-review-fix` label present** — confirms proper dispatch
 3. **PR exists and is open** — not merged, not closed
-4. **Cycle count < max** — count `## Review-Fix Cycle` comments; if >= 3,
+4. **PR repo URL valid** — the repo URL extracted from the PR must start
+   with `https://` and not contain `@` or `..` (lightweight defense-in-depth
+   check; full validation was done by the watcher at dispatch time)
+5. **Cycle count < max** — count `## Review-Fix Cycle` comments; if >= 3,
    mark `bot-fix-failed` + comment and exit
 
 ## Phase 1: Fetch Context
@@ -72,13 +91,23 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 ## Phase 3: Clone and Checkout
 
-1. Check if repo is already cloned (Ambient may auto-clone). If so, switch
-   to the PR branch:
+1. Check if repo is already cloned (Ambient may auto-clone).
+   If not cloned, clone first with protocol restrictions:
+   ```bash
+   git -c protocol.ext.allow=never -c protocol.file.allow=never \
+     clone -- <repo_url> work && cd work
+   ```
+2. **Harden git config** — run BEFORE checkout to prevent hook execution
+   during the checkout process:
+   ```bash
+   git config core.hooksPath /dev/null
+   git config core.fsmonitor false
+   ```
+3. Switch to the PR branch:
    ```bash
    gh pr checkout <number> --repo <owner/repo>
    ```
-   If not cloned, clone first then checkout.
-2. Verify the branch is up-to-date with the PR.
+4. Verify the branch is up-to-date with the PR.
 
 ## Phase 4: Address Findings
 
@@ -120,7 +149,25 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    ```bash
    git add path/to/changed/files
    ```
-4. Commit with conventional format and AI attribution:
+4. **Sensitive file blocklist** — run AFTER staging, BEFORE commit.
+   Check staged files against deterministic patterns (basename matching):
+   ```bash
+   SENSITIVE_PATTERNS=".env .env.local .env.production credentials.json token.json .git-credentials .netrc .npmrc .pypirc kubeconfig terraform.tfvars"
+   SENSITIVE_GLOBS="*.pem *.key *.p12 *.pfx *.jks *.asc *.secret *.secrets secrets.yaml secrets.json"
+   SENSITIVE_SSH="id_rsa id_dsa id_ed25519 id_ecdsa"
+   ALL_PATTERNS="$SENSITIVE_PATTERNS $SENSITIVE_GLOBS $SENSITIVE_SSH"
+   git diff --cached --name-only | while IFS= read -r file; do
+     base=$(basename "$file")
+     for pat in $ALL_PATTERNS; do
+       if [[ "$base" == $pat ]]; then
+         echo "BLOCKED: $file matches sensitive pattern $pat"
+         git reset HEAD -- "$file"
+       fi
+     done
+   done
+   ```
+   Soft block: unstage matched files, warn, continue with remaining files.
+5. Commit with conventional format and AI attribution:
    ```bash
    git commit -m "$(cat <<'EOF'
    fix(review): address code review findings (cycle N)
