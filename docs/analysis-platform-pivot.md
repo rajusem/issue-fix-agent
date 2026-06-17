@@ -1,9 +1,14 @@
 # Platform Pivot Analysis — Enterprise Harness Framework
 
+> **Status: EXPLORATION — not a committed plan**
 > Date: 2026-06-17
 > Context: Company direction shifting from Ambient Platform to OpenCode +
 > OpenShell. This document explores possible target architectures and a
 > longer-term enterprise direction for issue-fix-agent.
+>
+> For the near-term tactical migration plan, see
+> `docs/plan-opencode-openshell-migration.md`. For the decision
+> framework, see `docs/analysis-migration-pros-cons.md`.
 
 ---
 
@@ -114,6 +119,10 @@ Repo: https://github.com/prajapatin/agent-harness-engineering
 | **Git workflow** | Full (clone, branch, fix, PR, review) | None | None | issue-fix-agent is unique |
 | **Jira integration** | Full (labels, comments, transitions) | None | None | issue-fix-agent is unique |
 | **Retry/recovery** | bot-retry label, max 2 retries | Verification retry (max 3) | maxAttempts in ApprovalPolicy | All have retry |
+| **Complexity gating** | Signal-floor complexity gate (5 rules, AUDIT_SKIP_SIMPLE) | None | None | Unique to issue-fix-agent |
+| **Prompt injection defense** | Multi-layered: 4 CLAUDE.md files + sub-agent preambles | PII/injection in input guard | None | issue-fix-agent has depth, harness has breadth |
+| **Cost control** | TTL-based (session TTLs) + AUDIT_MAX_ITERATIONS | LangFuse budget caps | maxAttempts | Different mechanisms |
+| **Concurrency** | MAX_CONCURRENT_* (4 fix + 2 review + 2 review-fix) | None (single agent) | None documented | Unique to issue-fix-agent |
 | **Security** | URL validation, git hardening, blocklist | PII redaction, policy engine | Pod isolation, RBAC | Need all three |
 
 ---
@@ -217,7 +226,11 @@ L5 — Model:            Claude Opus/Sonnet, GPT-5.x, Gemini (via LiteLLM)
 
 ---
 
-## Migration Path
+## Illustrative Migration Path (if enterprise harness direction is chosen)
+
+Note: this is the long-term enterprise harness path (12-20 weeks,
+Python rewrite). For the near-term OpenCode migration (6-10 weeks,
+keep markdown skills), see `docs/plan-opencode-openshell-migration.md`.
 
 ### Phase 1: Extract portable components (no platform dependency)
 - Extract skill logic into Python modules (investigation strategies,

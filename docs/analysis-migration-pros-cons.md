@@ -1,8 +1,8 @@
 # Migration Pros/Cons — Ambient vs Enterprise Harness
 
 > Date: 2026-06-17
-> Investment to date: 17 commits, 2,636 lines across 12 workflow markdown
-> files, 6,150 lines of docs, 4 workflows, built over 4 days with
+> Investment to date: 18 commits, 2,636 lines across 12 workflow markdown
+> files, 6,156 lines of docs, 4 workflows, built over ~4 days with
 > multiple audit rounds.
 
 ---
@@ -13,7 +13,7 @@
 
 | # | Pro | Details |
 |---|-----|---------|
-| 1 | **Already built** | 4 workflows, 12 workflow markdown files, 8-phase watcher, 10-phase fix agent, 3-lens review — all written and documented |
+| 1 | **Already built** | 4 workflows, 12 workflow markdown files, 8-phase watcher, 13-phase fix agent (Phases 0-10 including 4A/4B), 3-lens review — all written and documented |
 | 2 | **Ready to test** | Config set for OBSINTA staging, setup guide with 21 test scenarios, production checklist |
 | 3 | **Battle-tested design** | Multiple audit rounds (Architecture, PE, Agent Expert) caught and fixed numerous issues across design and implementation |
 | 4 | **Zero code to write** | Entirely markdown-based — no Python, no build, no dependencies beyond Ambient |
@@ -145,7 +145,7 @@ scale testing.
 | **Multi-model** | No (Claude only) | Yes (LiteLLM, 100+ models) |
 | **Maintenance** | Edit markdown files | Python codebase, dependencies, infra |
 | **Team adoption** | Low barrier (just labels + Jira) | Higher barrier (code, deploy, monitor) |
-| **Scalability** | 20-min polling, 4 concurrent | Event-driven, configurable |
+| **Scalability** | 20-min polling, 8 concurrent (4 fix + 2 review + 2 review-fix) | Event-driven, configurable |
 
 ---
 
@@ -200,3 +200,23 @@ scale testing.
 
 4. OpenShell is "early preview" — building on it now risks rework when the
    API changes. Phase 4 should wait for stability.
+
+---
+
+## Related Documents
+
+This doc is the **decision document**. Two companion docs provide detail:
+
+- `docs/plan-opencode-openshell-migration.md` — **near-term tactical plan**:
+  translate skill files to OpenCode format, build external watcher script,
+  add OpenShell sandboxing. ~5-8 weeks. Keeps markdown skills, changes
+  only the runtime layer.
+
+- `docs/analysis-platform-pivot.md` — **long-term strategic exploration**:
+  enterprise harness with LangGraph, LangFuse, ChromaDB, LiteLLM.
+  12-20 weeks. Rewrites skills to Python, adds guardrails + memory +
+  observability. This is an option under evaluation, not a committed plan.
+
+The recommended sequence: do the tactical migration (doc 2) first, collect
+production data, then evaluate the enterprise harness (doc 3) based on
+observed gaps.
