@@ -1,19 +1,22 @@
-# Architecture — Issue Fix Agent
+# Architecture — Issue Fix Agent (Target State)
 
-> **Note:** This document describes the Ambient Platform-based design.
-> The system is migrating to OpenCode + OpenShell — see
-> `docs/plan-opencode-openshell-migration.md` for the target architecture.
-> The domain logic (skill files, label state machine, review methodology,
-> audit loop) remains valid; the runtime/dispatch layer is changing.
+> **This document describes the TARGET architecture** (OpenCode + OpenShell
+> on OpenShift). The current codebase in `workflows/` still uses the
+> Ambient Platform layout (`ambient.json`, `CLAUDE.md`). See
+> `docs/plan-opencode-openshell-migration.md` for migration phases.
+>
+> Domain logic (skill files, label state machine, audit loop, review
+> methodology, security hardening) is platform-agnostic and applies
+> regardless of runtime.
 >
 > Based on the audited design in `docs/archive/TODO-design-audit-rounds.md`
 > (4 audit rounds: Architecture, PE, Agent Expert reviews).
 
 ## Overview
 
-The Issue Fix Agent is an automated Jira-to-PR issue-fixing system
-running on the Ambient Code Platform. It watches Jira tickets labeled
-`autofix` and orchestrates a multi-agent pipeline:
+The Issue Fix Agent is an automated Jira-to-PR issue-fixing system. It
+watches Jira tickets labeled `autofix` and orchestrates a multi-agent
+pipeline:
 
 1. **Investigate** the issue and identify root cause
 2. **Plan** a fix with structured alternatives and risk assessment
@@ -24,52 +27,62 @@ running on the Ambient Code Platform. It watches Jira tickets labeled
 6. **Iterate** on review findings (max 3 cycles)
 7. **Merge** requires human approval — agents never approve PRs
 
+## Runtime Stack
+
+```
+L1 — Infrastructure:   OpenShift (K8s) — pods, secrets, networking
+L2 — Sandbox:          OpenShell — Landlock filesystem, network policies,
+                       process restrictions, per-agent YAML policies
+L3 — Agent Runtime:    OpenCode — skills, agents, MCP servers, hooks
+L4 — Domain Logic:     Skill files — investigation, audit, review, fix
+L5 — Model:            Claude Opus/Sonnet (via Anthropic API)
+```
+
+The orchestrator (Python watcher) runs at L1 as a K8s CronJob. It
+creates OpenShell sandboxes (L2) that run OpenCode (L3) with our
+skill files (L4). Each sandbox gets its own mcp-atlassian instance
+for Jira access. Secrets are injected via K8s Secrets / OpenShell
+`--env`, never through prompts.
+
 ## System Context
 
 ```
-                          ┌──────────────────────┐
-                          │       Ambient         │
-                          │    Code Platform      │
-                          │  (Session Mgmt, MCP)  │
-                          └──────────┬───────────┘
-                                     │
-          ┌──────────────────────────┼──────────────────────────┐
-          │                          │                          │
-          ▼                          ▼                          ▼
-  ┌───────────────┐         ┌───────────────┐         ┌───────────────┐
-  │  Jira Cloud   │         │    GitHub      │         │    Slack      │
-  │               │         │               │         │  (optional)   │
-  │ - Tickets     │         │ - Repos       │         │               │
-  │ - Labels      │         │ - PRs         │         │ - Cycle       │
-  │ - Comments    │         │ - Branches    │         │   summaries   │
-  │ - Transitions │         │ - CI status   │         │               │
-  └───────────────┘         └───────────────┘         └───────────────┘
-        ▲                          ▲
-        │ mcp-atlassian            │ gh CLI
-        │                          │
-  ┌─────┴──────────────────────────┴─────┐
-  │         Issue Fix Agent              │
-  │                                      │
-  │  ┌────────────┐  ┌──────────────┐   │
-  │  │  Watcher   │  │  Fix Agent   │   │
-  │  │ (Sonnet)   │──│  (Opus)      │   │
-  │  │ 15m TTL    │  │  150m TTL    │   │
-  │  └────────────┘  └──────┬───────┘   │
-  │                         │           │
-  │         ┌───────────────┤           │
-  │         ▼               ▼           │
-  │  ┌──────────┐  ┌───────────────┐   │
-  │  │ Audit    │  │ Review Agent  │   │
-  │  │ Sub-Agents│  │ (Sonnet)     │   │
-  │  │ (Sonnet) │  │ 30m TTL      │   │
-  │  │ inline   │  └──────┬────────┘   │
-  │  └──────────┘         │            │
-  │                ┌──────┴────────┐   │
-  │                │ Review-Fix    │   │
-  │                │ (Opus)        │   │
-  │                │ 45m TTL       │   │
-  │                └───────────────┘   │
-  └──────────────────────────────────────┘
+  ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+  │  Jira Cloud   │     │    GitHub      │     │    Slack      │
+  │ - Tickets     │     │ - Repos       │     │  (optional)   │
+  │ - Labels      │     │ - PRs         │     │ - Alerts      │
+  │ - Comments    │     │ - Branches    │     │ - Summaries   │
+  └──────┬────────┘     └──────┬────────┘     └───────────────┘
+         │ REST API / MCP      │ gh CLI              ▲
+         │                     │                     │ webhook
+         ▼                     ▼                     │
+  ┌──────────────────────────────────────────────────┤
+  │           Orchestrator (Python watcher)          │
+  │  - Polls Jira every 20 min                      │
+  │  - Label state machine                          │
+  │  - Dispatches sandboxed agents                  │
+  │  - Concurrency limits, retry, cancel            │
+  └──────────────────┬──────────────────────────────┘
+                     │ openshell sandbox create
+                     ▼
+  ┌──────────────────────────────────────────────────┐
+  │           OpenShell Sandbox (L2)                 │
+  │  ┌────────────────────────────────────────────┐  │
+  │  │  Policy Engine (Landlock, network, process) │  │
+  │  │                                            │  │
+  │  │  ┌──────────────────────────────────────┐  │  │
+  │  │  │  OpenCode Runtime (L3) + Skills (L4)                 │  │  │
+  │  │  │                                      │  │  │
+  │  │  │  Fix Agent (Opus, 150m)              │  │  │
+  │  │  │    └─ 3 audit sub-agents (Sonnet)    │  │  │
+  │  │  │  Review Agent (Sonnet, 30m)          │  │  │
+  │  │  │  Review-Fix Agent (Opus, 45m)        │  │  │
+  │  │  │                                      │  │  │
+  │  │  │  MCP: mcp-atlassian (local, per-run) │  │  │
+  │  │  └──────────────────────────────────────┘  │  │
+  │  └────────────────────────────────────────────┘  │
+  └──────────────────────────────────────────────────┘
+         Deployed on OpenShift (K8s)
 ```
 
 ## End-to-End Pipeline
@@ -78,8 +91,8 @@ running on the Ambient Code Platform. It watches Jira tickets labeled
 User creates Jira ticket with autofix label + repo URL
   │
   ▼
-WATCHER (cron, every 20 min, Sonnet, 15m TTL)
-  │ Polls Jira, dispatches child sessions
+ORCHESTRATOR (Python watcher, cron every 20 min)
+  │ Polls Jira via REST API, dispatches sandboxed agents
   │
   ▼
 FIX AGENT (Opus, 150m TTL)
@@ -97,9 +110,9 @@ FIX AGENT (Opus, 150m TTL)
   │     ├─ TTL checkpoint (skip if < 45 min remaining)
   │     ├─ Jira heartbeat comment
   │     │
-  │     ├─ [Agent tool] Architecture Reviewer    (sequential, ~10 min)
-  │     ├─ [Agent tool] PE Reviewer              (sequential, ~10 min)
-  │     ├─ [Agent tool] Language Expert           (sequential, ~10 min)
+  │     ├─ [Task tool] Architecture Reviewer    (sequential, ~10 min)
+  │     ├─ [Task tool] PE Reviewer              (sequential, ~10 min)
+  │     ├─ [Task tool] Language Expert           (sequential, ~10 min)
   │     │
   │     ├─ Combine: merge + deduplicate findings
   │     ├─ Validate: evidence check + confidence threshold
@@ -133,7 +146,7 @@ REVIEW-FIX AGENT (Opus, 45m TTL, max 3 cycles)
   │ Push to same branch → re-queue for review
   │
   ▼
-WATCHER detects merged PR → bot-merged
+ORCHESTRATOR detects merged PR → bot-merged
 ```
 
 ## Design Audit Loop (Phase 4A-4B)
@@ -151,16 +164,16 @@ would plan, get feedback from experts, revise, and only then code.
 
 ### Sub-Agent Execution Mechanism
 
-Sub-agents run as **Claude Code's built-in Agent tool** (inline
-sub-agents within the same session), NOT as separate Ambient sessions.
+Sub-agents run via **OpenCode's Task tool** (inline sub-agents within
+the fix agent's sandbox), NOT as separate sandbox instances.
 
 | Decision | Rationale |
 |----------|-----------|
-| Agent tool, not Ambient sessions | Fix agent has no `session` MCP — only the watcher does. 9 Ambient sessions per ticket would exhaust cluster resources. |
-| Sequential execution | Agent tool blocks per call. 3 x ~10 min = ~30 min per iteration. |
+| Task tool, not separate sandboxes | Audit sub-agents run inline within the fix agent's OpenShell sandbox. 9 separate sandboxes per ticket would exhaust cluster resources and add startup latency. |
+| Sequential execution | Task tool blocks per call. 3 x ~10 min = ~30 min per iteration. |
 | 10-minute timeout per sub-agent | If one times out, continue with 2/3 verdicts. |
-| Read-only via prompt instruction | Agent tool doesn't sandbox. Prompt-level enforcement is sufficient for plan review (soft constraint, acknowledged limitation). |
-| Sonnet for all sub-agents | Cost-conscious. Opus reserved for orchestrator only. |
+| Read-only via agent permissions | Each audit sub-agent is defined in `.opencode/agents/audit-*.md` with `edit: deny`, `bash: deny`, `task: deny`. Agent-level enforcement via OpenCode permissions, backed by OpenShell Landlock as defense-in-depth. Permission enforcement depends on OpenCode version — verify against deployed version. |
+| Sonnet for all sub-agents | Cost-conscious. Opus reserved for fix/review-fix agents only. Configured via `model:` field in agent definition frontmatter. |
 
 ### Three Audit Sub-Agents
 
@@ -369,6 +382,12 @@ Plan v1 | Iteration 0 (initial draft)
 | Root cause certainty | HIGH/MEDIUM/LOW | <evidence> |
 | Approach correctness | HIGH/MEDIUM/LOW | <evidence> |
 | Scope completeness | HIGH/MEDIUM/LOW | <evidence> |
+
+### Investigation Strategy
+**Signals detected**: <primary signal> (+ <secondary> if applicable)
+**Strategy used**: <strategy name from investigation-strategies.md>
+**Key findings from strategy**:
+  - <what the strategy revealed about the root cause>
 ```
 
 The approved plan is persisted to `.audit/approved-plan.md` in the
@@ -518,7 +537,7 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 │              TRUSTED                            │
 │                                                 │
 │  Skill files (issue-fix.md, etc.)               │
-│  CLAUDE.md session context                      │
+│  AGENTS.md project context                      │
 │  config.env, projects.json                      │
 │  Sub-agent prompt preambles                     │
 └─────────────────────────────────────────────────┘
@@ -533,10 +552,39 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | **Review comments** | Review-Fix treats as data describing issues, not instructions to execute |
 | **Fix plan → sub-agents** | Injection defense preamble on all sub-agent prompts; plan content is derived from untrusted sources |
 | **Skill URLs** | Must match allowlist patterns in `config/projects.json` |
-| **Secrets** | Pre-commit hook (`rh-multi-pre-commit`); self-review diff; planned gitleaks post-gate |
+| **Secrets** | Deterministic sensitive-file blocklist (Phase 6: .env, *.pem, *.key, credentials.json, etc.); pre-commit hooks; self-review diff; gitleaks (planned, not yet implemented) |
 | **AI attribution** | All commits include `Assisted-by: Claude Code / <model> (Anthropic)` trailer |
 
 ## Configuration
+
+### opencode.json (target)
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "anthropic": {}
+  },
+  "mcp": {
+    "atlassian": {
+      "type": "local",
+      "command": ["uvx", "mcp-atlassian",
+        "--jira-url", "https://stage-redhat.atlassian.net"],
+      "environment": {
+        "JIRA_USERNAME": "",
+        "JIRA_API_TOKEN": ""
+      }
+    }
+  }
+}
+```
+
+Note: `command` is a single array (no separate `args` field). Environment
+variables for the MCP server process go in the `environment` object.
+Credentials are injected at runtime via K8s Secrets or OpenShell `--env`.
+
+Agent-specific models are configured in `.opencode/agents/*.md` via the
+`model:` frontmatter field.
 
 ### config.env
 
@@ -548,8 +596,8 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | `REVIEW_SESSION_TTL` | 30 | Review session timeout (minutes) |
 | `REVIEW_FIX_MODEL` | claude-opus-4-6 | Review-fix agent model |
 | `REVIEW_FIX_SESSION_TTL` | 45 | Review-fix session timeout (minutes) |
-| `WATCHER_MODEL` | claude-sonnet-4-6 | Watcher model |
-| `WATCHER_SESSION_TTL` | 15 | Watcher session timeout (minutes) |
+| `WATCHER_MODEL` | claude-sonnet-4-6 | Legacy — watcher is a Python script in target architecture, not an LLM agent |
+| `WATCHER_SESSION_TTL` | 15 | Legacy — watcher uses JIRA_POLL_INTERVAL for cycle timing in target architecture |
 | `MAX_CONCURRENT_FIX_SESSIONS` | 4 | Parallel fix sessions |
 | `MAX_CONCURRENT_REVIEW_SESSIONS` | 2 | Parallel review sessions |
 | `MAX_CONCURRENT_REVIEW_FIX_SESSIONS` | 2 | Parallel review-fix sessions |
@@ -561,7 +609,7 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
 | `AUDIT_SKIP_SIMPLE` | true | Skip audit for simple fixes |
 | `AUDIT_MODEL` | claude-sonnet-4-6 | Model for all audit sub-agents |
-| ~~`AUDIT_MAX_COST_USD`~~ | — | Deferred — requires Ambient token-count API. `AUDIT_MAX_ITERATIONS` is the effective cost control. |
+| ~~`AUDIT_MAX_COST_USD`~~ | — | Deferred — requires token-count API. `AUDIT_MAX_ITERATIONS` is the effective cost control. |
 
 ### projects.json
 
@@ -593,12 +641,35 @@ only. `--approve` and `--request-changes` are explicitly forbidden.
 | 3 audit iterations (worst) | 9 Sonnet | ~110m | ~$7.50 |
 
 `AUDIT_MAX_ITERATIONS` is the effective cost control (token-level cost
-cap deferred until Ambient exposes token counts). All sub-agents
-run on Sonnet; Opus is reserved for the orchestrator.
+cap deferred until token-level cost tracking is available). All sub-agents
+run on Sonnet; Opus is reserved for the fix agent (which orchestrates
+the audit loop).
 
-**Caveat:** Claude Code's Agent tool may not support model selection
-for sub-agents. If sub-agents inherit Opus, per-iteration cost roughly
-doubles. The cost cap mitigates regardless of model.
+**Note:** This table shows the incremental cost of the audit layer only.
+The total per-ticket cost includes the Opus fix agent session itself
+(dominant cost: $10-30 for a 150m session), MCP server startup, and
+sandbox overhead. Total worst-case per ticket (with retries + review
+cycles): $60-90. See `docs/plan-opencode-openshell-migration.md`
+Phase 5 for the model evaluation plan to reduce costs.
+
+OpenCode supports per-agent model selection via the `model:` field in
+agent definition frontmatter — sub-agents use the model specified in
+their `.opencode/agents/*.md` file, not the parent agent's model.
+
+### Model Tiering Strategy
+
+| Tier | Models | Use for | Cost |
+|------|--------|---------|------|
+| **Premium** | Claude Opus | Fix agent, review-fix agent (code modification) | $$$ |
+| **Standard** | Claude Sonnet | Review agent, audit sub-agents | $$ |
+| **Free (cloud)** | Groq Llama 3.3 70B | Audit sub-agents (after evaluation) | Free (rate limited) |
+| **Free (local)** | Ollama Qwen3 30B/72B | Any stage (after evaluation) | Free (self-hosted) |
+| **Air-gapped** | Ollama Qwen3 72B on GPU | All stages (zero external calls) | Free (hardware cost) |
+
+MVP starts Claude-only. After Phase 5 (model evaluation), stages are
+moved to cheaper/free models based on measured quality impact. See
+`docs/plan-opencode-openshell-migration.md` Phase 5 for the evaluation
+methodology.
 
 ## Context Window Budget
 
@@ -632,54 +703,70 @@ cannot set dynamic TTL at dispatch time. Simple fixes exit early
 
 | MCP Server | Used By | Operations |
 |------------|---------|------------|
-| `mcp-atlassian` | All workflows | `getJiraIssue`, `searchJiraIssuesUsingJql`, `editJiraIssue`, `addCommentToJiraIssue`, `transitionJiraIssue` |
-| `session` (Ambient) | Watcher only | `create_session` — spawns child sessions |
+| `mcp-atlassian` | Fix, Review, Review-Fix agents | `getJiraIssue`, `searchJiraIssuesUsingJql`, `editJiraIssue`, `addCommentToJiraIssue`, `transitionJiraIssue` |
+
+mcp-atlassian runs as a **local MCP server** inside each OpenShell
+sandbox, managed by OpenCode via `opencode.json`. Each agent run gets
+its own mcp-atlassian instance — no shared service.
+
+The orchestrator (watcher script) uses **direct Jira REST API** (Python
+requests / curl), not MCP. It does not run inside a sandbox.
 
 Fallback: if `editJiraIssue` unavailable for labels, use `curl` with
 Basic Auth (`$JIRA_USERNAME` / `$JIRA_API_TOKEN`).
 
 ## Project Structure
 
+Target structure (OpenCode + OpenShell). Current codebase uses
+`workflows/` with `ambient.json` — see migration plan for mapping:
+
 ```
 issue-fix-agent/
+├── AGENTS.md                              # Project rules, security constraints
 ├── README.md                              # User-facing overview
-├── CLAUDE.md                              # Session context for all workflows
+├── opencode.json                          # OpenCode config: models, MCP, providers
+├── .opencode/
+│   ├── agents/                            # Agent persona definitions
+│   │   ├── fix.md                         # Fix agent (Opus, 150m)
+│   │   ├── review.md                      # Review agent (Sonnet, 30m)
+│   │   ├── review-fix.md                  # Review-fix agent (Opus, 45m)
+│   │   ├── audit-architecture.md          # Audit sub-agent (Sonnet, read-only)
+│   │   ├── audit-pe.md                    # Audit sub-agent (Sonnet, read-only)
+│   │   └── audit-language.md              # Audit sub-agent (Sonnet, read-only)
+│   ├── skills/                            # Workflow skill files
+│   │   ├── issue-fix/
+│   │   │   ├── SKILL.md                   # 13 phases + audit loop (4A-4B)
+│   │   │   └── investigation-strategies.md
+│   │   ├── issue-review/
+│   │   │   └── SKILL.md                   # 3-lens review + plan compliance
+│   │   └── review-fix/
+│   │       └── SKILL.md                   # 7-phase finding resolution
+│   └── hooks/
+│       └── block-destructive.sh           # PreToolUse hook: block force-push, rm -rf, etc.
+├── orchestrator/                          # Python watcher script
+│   ├── watcher.py                         # Jira polling, label state machine, dispatch
+│   ├── jira_client.py                     # REST API client for Jira
+│   └── config.py                          # Read config.env + projects.json
+├── policies/                              # OpenShell sandbox policies
+│   ├── fix-agent-policy.yaml              # read/write workspace, github+jira network
+│   ├── review-agent-policy.yaml           # read-only workspace, github+jira network
+│   └── review-fix-agent-policy.yaml       # read/write workspace, github+jira network
 ├── config/
 │   ├── config.env                         # Models, TTLs, concurrency, audit
-│   └── projects.json                      # Watched projects, allowlist
-├── workflows/
-│   ├── jira-watcher/                      # Cron orchestrator (Sonnet, 15m)
-│   │   ├── ambient.json
-│   │   ├── CLAUDE.md
-│   │   └── skills/jira-watcher.md         # 8-phase polling + TTL awareness
-│   ├── issue-fix/                         # Fix agent (Opus, 150m)
-│   │   ├── ambient.json
-│   │   ├── CLAUDE.md
-│   │   └── skills/
-│   │       ├── issue-fix.md               # 10 phases + audit loop (4A-4B)
-│   │       ├── investigation-strategies.md # Signal-specific investigation strategies
-│   │       └── audit-prompts/             # Sub-agent review criteria
-│   │           ├── architecture.md
-│   │           ├── pe.md
-│   │           └── language-expert.md
-│   ├── issue-review/                      # Review agent (Sonnet, 30m)
-│   │   ├── ambient.json
-│   │   ├── CLAUDE.md
-│   │   └── skills/issue-review.md         # 3-lens review + plan compliance
-│   └── review-fix/                        # Review-fix agent (Opus, 45m)
-│       ├── ambient.json
-│       ├── CLAUDE.md
-│       └── skills/review-fix.md           # 7-phase finding resolution
-├── .claude/
-│   └── settings.local.json                # Permission allowlist
+│   └── projects.json                      # Watched projects, allowlists
+├── Containerfile                          # Agent container image (UBI9 + OpenCode + tools)
 └── docs/
     ├── Architecture.md                    # This file
-    ├── setup-and-testing.md               # Setup guide + test scenarios
-    ├── TODO-architecture-review-findings.md # Prioritized improvement backlog
-    ├── TODO-cost-telemetry.md             # Cost & telemetry tracking plan
-    ├── TODO-design-audit-rounds.md        # Audit loop design (4x audited)
-    └── plans/
-        └── TEMPLATE.md                    # Per-ticket plan doc template
+    ├── plan-opencode-openshell-migration.md # Migration plan with phases + governance
+    ├── setup-and-testing.md               # Test scenarios (21 tests)
+    ├── TODO-architecture-review-findings.md # Domain requirements backlog
+    ├── plans/
+    │   └── TEMPLATE.md                    # Per-ticket plan doc template
+    └── archive/                           # Implemented design docs (historical)
+        ├── TODO-design-audit-rounds.md
+        ├── TODO-cost-telemetry.md
+        ├── TODO-rtk-integration.md
+        └── TODO-smart-context-investigation.md
 ```
 
 ## Design Decisions
@@ -693,10 +780,10 @@ issue-fix-agent/
 | **Structured Jira comments** | Cross-workflow communication without shared state. Comments are durable, auditable, human-readable. |
 | **Review agent never approves** | Human approval is a hard requirement. `--comment` only, never `--approve` or `--request-changes`. |
 | **Opus for orchestration, Sonnet for review** | Fix + audit orchestration needs strongest reasoning. Sub-agents and review are bounded pattern-matching. |
-| **150m TTL for all fix sessions** | Watcher can't set dynamic TTL (complexity gate runs after dispatch). Simple fixes exit early. |
+| **150m TTL for all fix sessions** | Orchestrator can't set dynamic TTL (complexity gate runs after dispatch). Simple fixes exit early. OpenShell sandbox timeout enforces the hard limit. |
 | **Sequential sub-agents** | Agent tool blocks per call. Sequential is simpler and avoids context-sharing issues. |
-| **Read-only sub-agents via prompt** | Agent tool doesn't sandbox. Instruction-level enforcement is sufficient for plan review. Acknowledged v1 limitation. |
-| **Wall-clock TTL measurement** | `date +%s` at session start, compute elapsed. No Ambient API dependency. |
+| **Read-only sub-agents via permissions** | OpenCode agent definitions enforce `edit: deny`, `bash: deny`, `task: deny` for audit sub-agents. Agent-level enforcement backed by OpenShell Landlock. |
+| **Wall-clock TTL measurement** | `date +%s` at session start, compute elapsed. No platform API dependency. |
 | **Convergence single-check** | With max 3 iterations, only one convergence data point exists (iteration 2). Single check is sufficient. |
 | **2 deterministic validation checks** | Evidence check (file exists) + confidence threshold. Simpler than 5-step LLM-judgment validation. Contradiction and convention checks moved to revision context. |
 
@@ -713,4 +800,4 @@ iterative revision:
 | 3 | 0 CRITICAL + 2 MAJOR | Fixed stale text (routing rules, exit conditions), config count, TTL measurement, compaction notes |
 | 4 | 0 CRITICAL + 0 MAJOR | 2 MINOR cosmetic. All 3 auditors APPROVE. |
 
-Full audit details: `docs/TODO-design-audit-rounds.md`
+Full audit details: `docs/archive/TODO-design-audit-rounds.md`

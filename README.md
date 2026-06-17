@@ -1,16 +1,26 @@
 # Issue Fix Agent
-
-An automated issue-fixing system that watches Jira tickets and dispatches AI agents to fix bugs, review code, and manage the full lifecycle from ticket to merged PR.
+   
+   > **Status:** The legacy implementation in this repository uses Ambient workflow
+   > files under `workflows/`, but the target runtime direction is now
+   > OpenCode + OpenShell. For the target-state architecture and migration plan,
+   > start with:
+   > - `docs/Architecture.md`
+   > - `docs/plan-opencode-openshell-migration.md`
+   >
+   > The README sections below primarily describe the current Ambient-era layout.
+   
+   An automated issue-fixing system that watches Jira tickets and dispatches AI agents to fix bugs, review code, and manage the full lifecycle from ticket to merged PR.
 
 ## How It Works
 
 1. A user creates a Jira ticket with the `autofix` label and includes the repository URL in the description
 2. The **Watcher** polls Jira on a schedule, picks up the ticket, and dispatches a **Fix Agent**
-3. The **Fix Agent** clones the repo, investigates the issue, implements a fix, creates a PR, and updates Jira
-4. The **Review Agent** reviews the PR through 3 lenses (correctness, security, quality)
-5. If the review finds issues, the **Review-Fix Agent** addresses them and sends back for re-review (max 3 cycles)
-6. When the review passes, a human approves and merges the PR
-7. The Watcher detects the merge and updates Jira with the `bot-merged` label
+3. The **Fix Agent** clones the repo, investigates the issue, writes a structured fix plan, and runs it through 3 independent audit sub-agents (Architecture, PE, Language Expert) for review before writing code
+4. After audit approval, the Fix Agent implements the fix, runs tests, creates a PR, and updates Jira
+5. The **Review Agent** reviews the PR through 3 lenses (correctness, security, quality)
+6. If the review finds issues, the **Review-Fix Agent** addresses them and sends back for re-review (max 3 cycles)
+7. When the review passes, a human approves and merges the PR
+8. The Watcher detects the merge and updates Jira with the `bot-merged` label
 
 ## Jira Ticket Format
 
@@ -66,9 +76,12 @@ config/
 └── projects.json     # Watched projects, skill URL allowlist
 ```
 
-## Setup
-
-### Prerequisites
+## Legacy Ambient Setup
+   
+   The steps below document the original Ambient-based workflow layout kept in
+   this repository for reference during migration.
+   
+   ### Prerequisites
 
 - Ambient Platform access with a project configured
 - `mcp-atlassian` MCP server configured for Jira access

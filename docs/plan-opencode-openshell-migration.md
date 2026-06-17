@@ -26,7 +26,6 @@
 │ │ │ ├── agents/review-fix.md (Opus)           │   │ │
 │ │ │ ├── skills/issue-fix/SKILL.md             │   │ │
 │ │ │ ├── skills/issue-review/SKILL.md          │   │ │
-│ │ │ ├── commands/fix-ticket.md                │   │ │
 │ │ │ ├── mcp: mcp-atlassian (Jira)            │   │ │
 │ │ │ └── AGENTS.md (security rules)            │   │ │
 │ │ │                                           │   │ │
@@ -146,8 +145,19 @@ This enables per-stage observability, cost attribution, and audit trails.
 
 For MVP, this file is written to `.audit/run-metadata.json` inside the
 sandbox (alongside existing `.audit/approved-plan.md` and
-`.audit/validation.json`). For production, these artifacts should be
-exported to a durable store outside Jira for analytics and audit.
+`.audit/validation.json`).
+
+**Sandbox artifact extraction:** OpenShell sandboxes are ephemeral —
+artifacts inside `.audit/` are destroyed when the sandbox is removed.
+The watcher MUST extract artifacts BEFORE destroying the sandbox:
+```
+openshell sandbox copy <sandbox-id>:/workspace/.audit/ ./runs/<run-id>/
+openshell sandbox destroy <sandbox-id>
+```
+Extracted artifacts are appended to `runs.jsonl` by the watcher
+(single-writer, sequential — no concurrent PVC write issues). For
+production, export to a durable store outside Jira for analytics
+and audit.
 
 ---
 
@@ -174,7 +184,7 @@ Before starting Phase 1:
 | `workflows/review-fix/skills/review-fix.md` | `.opencode/skills/review-fix/SKILL.md` | Same |
 | `workflows/issue-fix/skills/investigation-strategies.md` | `.opencode/skills/issue-fix/investigation-strategies.md` | Referenced by fix skill for signal-based investigation |
 | `workflows/issue-fix/skills/audit-prompts/*.md` (3 files) | `.opencode/agents/audit-architecture.md`, `audit-pe.md`, `audit-language.md` | Sub-agent prompt templates become agent definitions with locked-down permissions |
-| `workflows/*/CLAUDE.md` (4 files) | `.opencode/agents/fix.md`, `review.md`, `review-fix.md`, `watcher.md` | Agent configs with model, permissions — one per workflow |
+| `workflows/*/CLAUDE.md` (3 agent files) | `.opencode/agents/fix.md`, `review.md`, `review-fix.md` | Agent configs with model, permissions. Watcher CLAUDE.md is NOT migrated — watcher is a Python script, not an OpenCode agent. |
 | `CLAUDE.md` (root) | `AGENTS.md` | Project-level rules, security constraints |
 | `config/config.env` | `opencode.json` (models, providers) | Model assignments, MCP config |
 | `config/projects.json` | `opencode.json` (custom config) or skill config | Allowlists, project settings |
@@ -232,21 +242,29 @@ reads `CLAUDE.md`.
 ### 3. MCP Servers → OpenCode MCP Config
 
 ```json
-// opencode.json
 {
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "anthropic": {}
+  },
   "mcp": {
     "atlassian": {
       "type": "local",
-      "command": "uvx",
-      "args": ["mcp-atlassian",
-        "--jira-url", "https://stage-redhat.atlassian.net",
-        "--jira-username", "$JIRA_USERNAME",
-        "--jira-api-token", "$JIRA_API_TOKEN"
-      ]
+      "command": ["uvx", "mcp-atlassian",
+        "--jira-url", "https://stage-redhat.atlassian.net"],
+      "environment": {
+        "JIRA_USERNAME": "",
+        "JIRA_API_TOKEN": ""
+      }
     }
   }
 }
 ```
+
+Note: `command` is a single array (no separate `args` field). Credentials
+go in `environment` object, injected at runtime via K8s Secrets or
+OpenShell `--env`. This format is identical to the example in
+Architecture.md.
 
 OpenCode manages MCP servers natively — it starts them on demand, routes
 tool calls, and handles auth. The `mcp__atlassian__*` tool names may
@@ -371,7 +389,9 @@ process:
 
 Different policies per agent role:
 - **Fix agent:** read/write workspace, network to GitHub + Jira + LLM API
-- **Review agent:** read-only workspace (no write), network to GitHub + Jira + LLM API
+- **Review agent:** write during setup (git clone + gh pr checkout),
+  then read-only for the review itself. No push credentials. Network
+  to GitHub + Jira + LLM API
 - **Watcher:** no workspace access, network to Jira only
 
 ## Migration Phases
@@ -395,7 +415,7 @@ any agent runs in production.
   - Sandbox creation failure (>3 in 10 minutes → CRITICAL)
   - Agent running > TTL with no Jira update (→ CRITICAL)
   - Fix success rate < 50% over rolling 24h (→ HIGH)
-  - Cost estimate > $20 per ticket (→ HIGH)
+  - Cost estimate > $50 per ticket (→ HIGH, typical is $10-30)
   - Tickets stale in bot-in-progress > 4h (→ HIGH)
 - Alerts delivered via Slack webhook (same `SLACK_WEBHOOK_URL` as
   watcher cycle summary)
@@ -446,9 +466,13 @@ is already compatible with standard log ingestion pipelines.
   uncertain findings before they trigger a review-fix cycle.
 - Add structured `.audit/fix-plan.json` alongside the markdown plan —
   machine-readable version with file list, change descriptions, and
-  expected test outcomes. The review agent's plan compliance check
-  (Phase 2.5) compares against this JSON deterministically instead
-  of LLM-interpreting the markdown plan.
+  expected test outcomes. This is a local artifact for the fix agent's
+  own use and for post-run analytics (extracted by watcher).
+  The review agent's plan compliance check (Phase 2.5) reads the plan
+  from the `## Fix Plan (v* — APPROVED)` **Jira comment** (not from
+  fix-plan.json), because the review runs in a separate sandbox and
+  cannot access the fix agent's local files. The Jira comment is the
+  cross-stage transport mechanism for plan data.
 
 **What stays the same:**
 - All skill logic (investigation, audit loop, review methodology)
@@ -526,7 +550,7 @@ needs updating — skill files are unaffected.
 - Monitoring captures all key metrics (if monitoring is in place)
 - Label state machine works correctly across all transitions
 
-**Total estimated timeline: 7-11 weeks**
+**Total estimated timeline: 9-14 weeks** (including model evaluation)
 
 | Phase | Duration | Cumulative |
 |-------|----------|-----------|
@@ -534,8 +558,92 @@ needs updating — skill files are unaffected.
 | Phase 1: Skill translation | 1-2 weeks | 2-3 weeks |
 | Phase 2: Watcher script | 1-2 weeks | 3-5 weeks |
 | Phase 3: OpenShell sandboxing | 2-3 weeks | 5-8 weeks |
-| Phase 4: E2E testing on OBSINTA | 2 weeks | 7-10 weeks |
-| Buffer for unknowns | 1 week | 8-11 weeks |
+| Phase 4: E2E testing on OBSINTA (Claude) | 2 weeks | 7-10 weeks |
+| Phase 5: Free model evaluation | 2-3 weeks | 9-13 weeks |
+| Buffer for unknowns | 1 week | 10-14 weeks |
+
+### Phase 5: Free/Open Model Evaluation (2-3 weeks)
+
+**Why:** Claude Opus costs $15/MTok input, $75/MTok output. At scale,
+model cost dominates. Free/open models could reduce per-ticket cost to
+near-zero for some pipeline stages. But quality trade-offs must be
+measured, not assumed.
+
+**What:**
+Run the same 10-20 OBSINTA tickets through both Claude and free models.
+Compare results using run-metadata.json data.
+
+**Model candidates:**
+
+| Provider | Model | Cost | Best for |
+|----------|-------|------|----------|
+| Ollama (local) | Qwen3 72B | Free (self-hosted GPU) | Fix agent, review-fix |
+| Ollama (local) | Qwen3 30B | Free (runs on 16GB RAM) | Audit sub-agents |
+| Groq (cloud) | Llama 3.3 70B | Free tier (rate limited) | Review agent, audit |
+| Anthropic | Claude Opus | $$$ | Baseline comparison |
+| Anthropic | Claude Sonnet | $$ | Baseline comparison |
+
+**Evaluation matrix per ticket:**
+
+| Metric | Measure | Source |
+|--------|---------|--------|
+| Fix quality | Did it find the correct root cause? Same fix? | Manual comparison of PRs |
+| Review quality | Same findings? False positive rate? | Compare review comments |
+| Audit quality | Useful plan feedback or hallucinated findings? | Compare audit iterations |
+| Success rate | bot-merged vs bot-fix-failed | run-metadata.json outcome |
+| Duration | Wall-clock time per stage | run-metadata.json timestamps |
+| Token usage | Input/output tokens per run | run-metadata.json (if available) |
+| Cost | $ per ticket (Claude) vs $0 (free) | Calculated from tokens |
+
+**Evaluation approach:**
+1. Week 1: run 10 tickets on Claude (baseline) — collect run-metadata
+2. Week 2: run same 10 tickets on free model — same repo state, same
+   ticket descriptions
+3. Week 3: compare results, identify which stages degrade, which are
+   equivalent
+
+**Tiered rollout based on results:**
+
+| If free model... | Then... |
+|-----------------|---------|
+| Matches Claude on audit sub-agents | Move audit to free (lowest risk, 3 sub-agents per ticket) |
+| Matches Claude on review | Move review to free (read-only, bounded task) |
+| Close to Claude on fix | Consider for simple fixes (AUDIT_SKIP_SIMPLE tickets) |
+| Degrades on fix | Keep fix on Claude, free model for everything else |
+| Degrades on everything | Stay Claude-only, re-evaluate with next model generation |
+
+**OpenCode config for A/B testing:**
+```json
+{
+  "provider": {
+    "anthropic": {},
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://ollama-service:11434/v1" },
+      "models": {
+        "qwen3:72b": { "tools": true },
+        "qwen3:30b": { "tools": true }
+      }
+    },
+    "groq": {}
+  }
+}
+```
+
+Switch models per agent by changing the `model:` field in agent
+definitions — no code changes needed.
+
+**Infrastructure for local models:**
+- Ollama or vLLM deployed as a K8s Deployment in the OpenShift cluster
+- GPU node(s) for 72B models (requires NVIDIA GPU operator)
+- For 30B models: CPU-only nodes with 32GB+ RAM (slower but functional)
+- Groq: cloud API, no infrastructure needed (free tier has rate limits)
+
+**Done when:**
+- 10+ tickets compared between Claude and free model
+- Per-stage quality scores documented
+- Cost savings quantified ($ per ticket reduction)
+- Decision made: which stages move to free, which stay Claude
 
 ## Target Deployment: OpenShift
 
@@ -544,6 +652,11 @@ The system targets an OpenShift cluster for production deployment:
 **Watcher:**
 - K8s CronJob (or Deployment with internal polling loop) in a dedicated
   namespace (e.g., `issue-fix-agent`)
+- **Singleton requirement:** Only one watcher instance may dispatch runs
+  or append to `runs.jsonl`. If deployed as a CronJob, set
+  `concurrencyPolicy: Forbid`. If deployed as a Deployment, use exactly
+  1 replica OR implement leader election. This prevents duplicate agent
+  dispatch and PVC write races.
 - ServiceAccount with minimal RBAC (no cluster-admin)
 - Secrets via OpenShift Secrets (GITHUB_TOKEN, JIRA_API_TOKEN,
   JIRA_USERNAME, SLACK_WEBHOOK_URL)
@@ -625,8 +738,22 @@ a continuation of the fix agent's context. This is enforced by:
 
 **Staged rollout:**
 1. Phase 4 testing on OBSINTA staging tickets (non-production)
-2. Shadow mode: run OpenCode pipeline alongside manual fixes for same
-   tickets. Compare outcomes without relying on agent results.
+2. Shadow mode (dry-run): run OpenCode pipeline on same tickets with
+   DRY_RUN=true. Two enforcement points:
+   - **Agent side**: PreToolUse hooks intercept and log (not execute)
+     `git push`, `gh pr create`, and MCP Jira tool calls.
+   - **Watcher side**: the watcher script itself checks DRY_RUN before
+     any Jira REST call (label swaps, comments, transitions). In
+     dry-run mode, the watcher logs the intended action but does not
+     execute the HTTP request. This is critical because the watcher
+     uses direct REST, not MCP — PreToolUse hooks do not cover it.
+   The agent investigates and plans normally but does not create real
+   PRs or modify Jira. Compare proposed fix against the human's fix.
+   **Shadow mode deduplication:** Because Jira labels are not mutated
+   in dry-run mode, the watcher MUST maintain a local cache (e.g.,
+   `shadow-runs.json` on the PVC) of processed tickets (keyed by
+   ticket ID + updated timestamp) to prevent infinite re-processing
+   of the same ticket on every poll.
 3. Pilot: 1 team, 1 Jira project, 5-10 tickets/week for 2 weeks
 4. Expand: add projects to `watched_projects` in projects.json
 
@@ -659,10 +786,10 @@ be cleaned up by the watcher's stale session cleanup when it restarts
 
 | Artifact | Location | Retention |
 |----------|----------|-----------|
-| `run-metadata.json` | `runs.jsonl` on PVC | 90 days (configurable) |
-| `.audit/approved-plan.md` | Destroyed with sandbox | Summarized in Jira `## Fix Plan` comment |
-| `.audit/validation.json` | Destroyed with sandbox | Summarized in Jira `## Fix Applied` telemetry |
-| `.audit/fix-plan.json` | Destroyed with sandbox | Key fields in `## Fix Plan` Jira comment |
+| `run-metadata.json` | Extracted to `runs/<run-id>/` on PVC | 90 days (configurable) |
+| `.audit/approved-plan.md` | Extracted to `runs/<run-id>/` on PVC | 90 days. Also summarized in Jira `## Fix Plan` comment |
+| `.audit/validation.json` | Extracted to `runs/<run-id>/` on PVC | 90 days. Also summarized in Jira `## Fix Applied` telemetry |
+| `.audit/fix-plan.json` | Extracted to `runs/<run-id>/` on PVC | 90 days. Key fields also in `## Fix Plan` Jira comment |
 | Jira comments | Jira | Permanent (follows Jira retention policy) |
 | PR + commits | GitHub | Permanent (follows repo retention policy) |
 | Watcher logs | `runs.jsonl` on PVC | 90 days |

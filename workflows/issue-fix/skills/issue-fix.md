@@ -713,11 +713,14 @@ investigation (Phase 3) and audit (Phase 4B).
 
 ### Context Compaction
 
-After exiting the audit loop:
+After exiting the audit loop, you MUST reduce context before Phase 5:
 1. Ensure the final approved plan is saved to `.audit/approved-plan.md`
 2. Summarize the audit trail into one paragraph for reference
-3. Discard detailed sub-agent responses from working memory — only the
-   approved plan and summary matter for Phase 5
+3. You MUST discard ALL detailed sub-agent responses, raw findings
+   JSON, and iteration-by-iteration audit details from working memory.
+   Retain ONLY the approved plan summary and the one-paragraph audit
+   trail. Phase 5 reads the full plan from `.audit/approved-plan.md`
+   on disk — it does not need the audit details in context.
 
 ## Phase 5: Implement Fix
 

@@ -2,7 +2,8 @@
 
 Automated issue-fixing system that watches Jira tickets labeled `autofix`,
 dispatches AI agents to fix issues, review code, and update Jira through
-a label-based state machine. Runs on the Ambient Platform.
+a label-based state machine. Target runtime: OpenCode + OpenShell on
+OpenShift (migrating from Ambient Platform).
 
 ## Architecture
 
@@ -56,7 +57,9 @@ Basic Auth using `$JIRA_USERNAME` / `$JIRA_API_TOKEN`.
 
 ## Cross-Workflow Contracts
 
-Workflows communicate through Jira comments with specific formats:
+Workflows communicate through Jira comments with specific formats.
+See `docs/Architecture.md` comment contracts table for the full list
+(16 headers). Key headers shown below:
 
 | Comment Header | Written By | Read By | Contains |
 |---------------|-----------|---------|----------|
