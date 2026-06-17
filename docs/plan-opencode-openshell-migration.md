@@ -473,21 +473,54 @@ is already compatible with standard log ingestion pipelines.
   fix-plan.json), because the review runs in a separate sandbox and
   cannot access the fix agent's local files. The Jira comment is the
   cross-stage transport mechanism for plan data.
+- **RTK token optimization** — validate RTK compatibility with OpenCode:
+  - RTK is currently integrated via Claude Code hooks (`rtk init`,
+    `rtk hooks uninstall`, `rtk gain`). OpenCode uses a different
+    hook system (TypeScript plugins, 25+ lifecycle events).
+  - Check if RTK already has an OpenCode integration (`rtk init`
+    may auto-detect OpenCode). If not, options:
+    a. Write an OpenCode plugin that wraps RTK's rewrite logic
+    b. Use RTK as a PreToolUse hook (intercept bash commands)
+    c. Check if OpenCode has native command output filtering
+  - If RTK is not compatible with OpenCode in Phase 1, defer to
+    Phase 3 (after sandboxing is in place). RTK is optional
+    (RTK_ENABLED=false by default) — the pipeline works without it.
+  - Update opencode.json to include RTK_ENABLED config if supported.
+  - The fix agent skill's RTK sections (Phase 1 init, Phase 4B pause,
+    Phase 10 metrics) need updating for OpenCode's hook mechanism.
+- **Smart context validation** — verify these features carry over:
+  - Signal classification (Phase 1 step 5) — LLM reasoning, no
+    platform dependency. Transfers as-is.
+  - Investigation strategies (investigation-strategies.md) — must be
+    moved alongside the fix skill. Already in the mapping table.
+  - Knowledge repo clone (Phase 2 step 6) — `git clone --depth 1`
+    with hardened config. Works the same in OpenCode. Verify that
+    OpenShell network policy allows cloning from knowledge repo hosts.
+  - Multi-skill URLs (Phase 1 step 2) — fetched via `curl`. Works in
+    any runtime. Verify skill URL allowlist is passed in dispatch prompt.
+  - Complexity gate signal floors — skill logic, no platform dependency.
 
 **What stays the same:**
 - All skill logic (investigation, audit loop, review methodology)
 - Security hardening (git, URL, sensitive files)
 - Label state machine (Jira labels)
 - Cross-workflow contracts (Jira comments)
+- Signal-driven investigation (5 strategies)
+- Knowledge repo support (clone + size check + cleanup)
+- Multi-skill URL support (allowlist + fetch + max 5)
 
 **Effort:** Medium — file moves + Ambient reference removal + MCP tool
-name validation. The 1,020-line issue-fix.md is the dominant cost center.
+name validation + RTK compatibility check. The 1,020-line issue-fix.md
+is the dominant cost center.
 
 **Done when:**
 - `opencode run --skill issue-fix` executes without errors on a test repo
 - MCP tools (mcp-atlassian) are callable from within OpenCode
 - Audit sub-agents spawn and return structured JSON
 - AGENTS.md rules are loaded in context (verify via agent output)
+- Signal classification produces correct signal type for test tickets
+- Investigation strategies file is loadable from the skill
+- RTK status determined: compatible / needs plugin / deferred
 
 ### Phase 2: Build Watcher as External Script (1-2 weeks)
 

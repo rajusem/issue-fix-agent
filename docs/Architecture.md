@@ -667,7 +667,54 @@ their `.opencode/agents/*.md` file, not the parent agent's model.
 | **Air-gapped** | Ollama Qwen3 72B on GPU | All stages (zero external calls) | Free (hardware cost) |
 
 MVP starts Claude-only. After Phase 5 (model evaluation), stages are
-moved to cheaper/free models based on measured quality impact. See
+moved to cheaper/free models based on measured quality impact.
+
+### RTK Token Optimization
+
+RTK (https://github.com/rtk-ai/rtk) reduces LLM token consumption by
+60-90% by filtering noise from shell command outputs (whitespace,
+boilerplate, verbose metadata). Controlled by `RTK_ENABLED=false`
+(default off, opt-in).
+
+When enabled in the fix agent:
+- **Phase 1**: install RTK hook with backup + restore-on-fail
+- **Phase 4B**: RTK paused during audit loop (prevents filtering of
+  evidence validation commands)
+- **Phase 10**: `rtk gain` metrics embedded in `## Fix Applied` Jira
+  comment with >95% savings canary warning
+
+**OpenCode migration**: RTK currently integrates via Claude Code hooks.
+For OpenCode, RTK integration needs validation — it may auto-detect
+OpenCode, or may need an OpenCode plugin wrapper. See migration plan
+Phase 1 for compatibility check. RTK is optional; the pipeline works
+without it.
+
+### Smart Context (Signal-Driven Investigation)
+
+The fix agent classifies each ticket's issue description into signal
+categories using LLM reasoning (not keyword matching):
+- **regression**: something that previously worked now fails
+- **dependency**: related to a package/library upgrade
+- **concurrency**: intermittent, timing-dependent
+- **environment**: works in one environment but not another
+- **performance**: speed degradation, timeouts
+- **default**: none of the above
+
+Each signal type triggers a specific investigation strategy from
+`investigation-strategies.md` (git history analysis, dependency tree
+inspection, concurrency pattern search, etc.). Signal type also floors
+the complexity gate — concurrency, performance, and dependency signals
+enforce a minimum audit iteration even for simple-looking fixes.
+
+Additional context features:
+- **Multi-skill URLs**: up to 5 domain-specific guidance URLs from the
+  Jira ticket, validated against `skill_url_allowlist` in projects.json
+- **Knowledge repo**: separate repo cloned for domain context (glossary,
+  architecture docs), validated against `knowledge_repo_allowlist`,
+  cloned with hardened git config, size-capped at 500MB, cleaned up
+  after investigation
+
+See
 `docs/plan-opencode-openshell-migration.md` Phase 5 for the evaluation
 methodology.
 
