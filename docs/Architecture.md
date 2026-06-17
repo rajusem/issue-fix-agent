@@ -1,6 +1,12 @@
 # Architecture — Issue Fix Agent
 
-> Based on the audited design in `docs/TODO-design-audit-rounds.md`
+> **Note:** This document describes the Ambient Platform-based design.
+> The system is migrating to OpenCode + OpenShell — see
+> `docs/plan-opencode-openshell-migration.md` for the target architecture.
+> The domain logic (skill files, label state machine, review methodology,
+> audit loop) remains valid; the runtime/dispatch layer is changing.
+>
+> Based on the audited design in `docs/archive/TODO-design-audit-rounds.md`
 > (4 audit rounds: Architecture, PE, Agent Expert reviews).
 
 ## Overview

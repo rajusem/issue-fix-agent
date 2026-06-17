@@ -414,6 +414,11 @@ any agent runs in production.
 **Effort:** 1 week. The run-metadata.json schema is already defined.
 The alert rules are simple threshold checks on JSONL data.
 
+**Future upgrade:** If the target OpenShift cluster has centralized
+logging (FluentBit, Splunk, ELK, Datadog), configure a log forwarder
+for `runs.jsonl` instead of the custom alert script. The JSONL format
+is already compatible with standard log ingestion pipelines.
+
 ### Phase 1: Translate Skills to OpenCode Format (1-2 weeks)
 
 **What changes:**
@@ -490,6 +495,11 @@ REST API (no MCP needed for the watcher).
 - Design sandbox failure recovery (watcher detects crashed sandboxes)
 - Verify Landlock enforcement on target kernel (`/sys/kernel/security/landlock/abi_version`)
 - Measure sandbox creation latency (target: < 60s including image pull)
+- Create a local dev wrapper script for testing policies on developer
+  laptops: `./scripts/local-sandbox-test.sh fix` that runs
+  `openshell sandbox create --driver docker -- opencode run ...` with
+  the same policies used in OpenShift. This lets developers validate
+  Landlock policies locally before deploying to the cluster.
 
 **Done when:**
 - 4 fix + 2 review + 2 review-fix sandboxes run concurrently for 3 cycles
@@ -594,3 +604,71 @@ The system targets an OpenShift cluster for production deployment:
 - **Headless CI/CD** — `opencode run` in any CI pipeline
 - **No MCP blocking** — run mcp-atlassian locally, no platform dependency
 - **Faster iteration** — OpenCode skills + agents are just files, no deploy
+
+---
+
+## Enterprise Governance
+
+### Reviewer Independence
+
+The review agent MUST run in a fresh, independent workspace — never as
+a continuation of the fix agent's context. This is enforced by:
+- Separate OpenShell sandbox per stage (fix sandbox ≠ review sandbox)
+- Review sandbox clones the repo fresh and checks out the PR branch
+  via `gh pr checkout` (read-only, no push credentials)
+- Review agent uses a different model tier than the fix agent (Sonnet
+  vs Opus) to get independent perspective
+- Future: consider cross-provider review (different LLM vendor for
+  review) as a quality governance mechanism
+
+### Rollout / Rollback
+
+**Staged rollout:**
+1. Phase 4 testing on OBSINTA staging tickets (non-production)
+2. Shadow mode: run OpenCode pipeline alongside manual fixes for same
+   tickets. Compare outcomes without relying on agent results.
+3. Pilot: 1 team, 1 Jira project, 5-10 tickets/week for 2 weeks
+4. Expand: add projects to `watched_projects` in projects.json
+
+**Rollback:**
+- To stop all automation: remove the watcher CronJob/Deployment
+- To stop one ticket: add `no-autofix` label
+- To stop and retry: add `bot-cancelled` label
+- To revert a merged fix: standard git revert on the target repo
+- Watcher script has no persistent state — stopping and restarting
+  it is safe (Jira labels are the source of truth)
+
+**Kill switch:** delete the watcher Deployment/CronJob. All in-flight
+sandboxes will expire at their TTL. Tickets in `bot-in-progress` will
+be cleaned up by the watcher's stale session cleanup when it restarts
+(or manually by removing the label).
+
+### Ownership
+
+| Component | Owner | Responsibilities |
+|-----------|-------|-----------------|
+| Watcher script | Platform team | Deployment, monitoring, cron schedule |
+| Skill files | Agent team | Fix/review logic, investigation strategies |
+| OpenShell policies | Security team | Filesystem/network/process rules |
+| Jira project config | Project leads | watched_projects, allowlists |
+| Container image | Platform team | Build, push, pre-pull |
+| MCP servers | Platform team | mcp-atlassian deployment, credentials |
+| Incident review | Agent team + project leads | Post-mortem on bot-fix-failed patterns |
+
+### Artifact Retention
+
+| Artifact | Location | Retention |
+|----------|----------|-----------|
+| `run-metadata.json` | `runs.jsonl` on PVC | 90 days (configurable) |
+| `.audit/approved-plan.md` | Destroyed with sandbox | Summarized in Jira `## Fix Plan` comment |
+| `.audit/validation.json` | Destroyed with sandbox | Summarized in Jira `## Fix Applied` telemetry |
+| `.audit/fix-plan.json` | Destroyed with sandbox | Key fields in `## Fix Plan` Jira comment |
+| Jira comments | Jira | Permanent (follows Jira retention policy) |
+| PR + commits | GitHub | Permanent (follows repo retention policy) |
+| Watcher logs | `runs.jsonl` on PVC | 90 days |
+| Sandbox logs | OpenShell gateway | Depends on gateway log retention config |
+
+For audit compliance, the `runs.jsonl` file is the execution record of
+truth. Jira comments are the business record. Both must be retained for
+the compliance period. Consider exporting `runs.jsonl` to a central log
+store (FluentBit → Splunk/ELK) for long-term retention beyond 90 days.

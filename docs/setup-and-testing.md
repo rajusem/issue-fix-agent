@@ -1,5 +1,12 @@
 # Setup & Testing Guide
 
+> **Note:** This guide targets the Ambient Platform deployment. The system
+> is migrating to OpenCode + OpenShell — see
+> `docs/plan-opencode-openshell-migration.md` for the new setup.
+> The test scenarios (Parts 4, 7, 8) test Jira/GitHub behavior and remain
+> valid regardless of runtime. Parts 1-3 (prerequisites, MCP inventory,
+> Ambient config) need rewriting for the OpenCode stack.
+
 Step-by-step guide to configure and test the Issue Fix Agent system.
 
 ## Test Environment

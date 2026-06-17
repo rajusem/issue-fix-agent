@@ -153,20 +153,19 @@ scale testing.
 
 **Don't choose — do both strategically.**
 
-1. **Keep current Ambient system for immediate testing** (if Jira MCP gets
-   unblocked via curl fallback). Prove the concept works end-to-end on
-   real tickets. Collect data on fix quality, failure rates, costs.
+1. **Start Phase 0-1 of OpenCode migration** — translate skills,
+   build observability foundation. Low risk, high value.
 
-2. **Start Phase 1 in parallel** — extract portable components into Python.
-   This is additive and low-risk. The Python modules can be tested
-   independently.
+2. **Collect production data early** — run 10-20 tickets through the
+   OpenCode pipeline to learn which guardrails matter, where failures
+   occur, what costs look like.
 
-3. **Use production data to guide Phase 2-3 design** — actual ticket data
-   tells you which guardrails matter, what memory is useful, where
-   observability gaps hurt.
+3. **Add OpenShell sandboxing when stable** — don't build on alpha
+   technology. Wait for beta or GA before relying on it for security.
 
-4. **Phase 4-5 when OpenShell/OLS stabilizes** — don't build on early
-   preview technology. Wait for GA or at least beta.
+4. **Evaluate enterprise harness based on data** — decide whether
+   LangGraph/LangFuse/ChromaDB are needed based on observed gaps,
+   not speculation.
 
 ### Pros of Hybrid
 - Get real-world data NOW (not in 8-13 weeks)

@@ -3,7 +3,9 @@
 > Generated: 2026-06-05 | Priority review: 2026-06-05
 > Source: Deep-dive comparison of issue-fix-agent against all 13 sibling
 > projects in `2026_05_issue_fix_agent_work/` (including template-agent)
-> Status: Prioritized by PE + Agent Expert review
+> Status: Sprint 1 DONE. Remaining items are domain requirements —
+> implementation approach changes with OpenCode + OpenShell migration
+> (see `docs/plan-opencode-openshell-migration.md`).
 
 ---
 
