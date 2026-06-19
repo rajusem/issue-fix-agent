@@ -7,3 +7,8 @@
 .opencode/sessions/
 .opencode/cache/
 .opencode/.state
+
+# Orchestrator runtime artifacts
+orchestrator/state/dispatch_state.json
+orchestrator/logs/
+orchestrator/.venv/
