@@ -37,6 +37,7 @@ class Config:
     audit_model: str
     rtk_enabled: bool
     dry_run: bool
+    sandbox_enabled: bool
     slack_webhook_url: str | None
     watcher_ttl: int
 
@@ -86,6 +87,7 @@ def load_config(base_dir: Path | None = None) -> Config:
         audit_model=os.environ.get("AUDIT_MODEL", "claude-sonnet-4-6"),
         rtk_enabled=os.environ.get("RTK_ENABLED", "false").lower() == "true",
         dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
+        sandbox_enabled=os.environ.get("SANDBOX_ENABLED", "false").lower() == "true",
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
         watcher_ttl=int(os.environ.get("WATCHER_SESSION_TTL", "15")),
     )
@@ -93,7 +95,9 @@ def load_config(base_dir: Path | None = None) -> Config:
     return config
 
 
-def validate_config(config: Config) -> None:
+def validate_config(config: Config, base_dir: Path | None = None) -> None:
+    if base_dir is None:
+        base_dir = Path(__file__).parent.parent
     errors = []
 
     if not config.jira_site:
@@ -108,6 +112,16 @@ def validate_config(config: Config) -> None:
         errors.append("watched_projects is empty in projects.json")
     if not config.allowed_repo_hosts:
         errors.append("allowed_repo_hosts is empty in projects.json — all tickets will be skipped")
+
+    if config.sandbox_enabled:
+        import shutil
+        if not shutil.which("openshell"):
+            errors.append("SANDBOX_ENABLED=true but openshell binary not found in PATH")
+        policies_dir = base_dir / "policies" if base_dir else Path("policies")
+        for agent in ["fix-investigate", "fix-implement", "review", "review-fix"]:
+            policy = policies_dir / f"{agent}.yaml"
+            if not policy.exists():
+                errors.append(f"Policy file missing: {policy}")
 
     if errors:
         for err in errors:

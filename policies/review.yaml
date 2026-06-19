@@ -1,0 +1,64 @@
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /etc
+    - /bin
+  read_write:
+    - /sandbox
+    - /tmp
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  github:
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        access: read-only
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        access: read-write
+      - host: codeload.github.com
+        port: 443
+        protocol: rest
+        access: read-only
+    binaries:
+      - path: /sandbox/**
+
+  githubusercontent:
+    endpoints:
+      - host: raw.githubusercontent.com
+        port: 443
+        protocol: rest
+        access: read-only
+    binaries:
+      - path: /sandbox/**
+
+  jira:
+    endpoints:
+      - host: stage-redhat.atlassian.net
+        port: 443
+        protocol: rest
+        access: full
+    binaries:
+      - path: /sandbox/**
+
+  vertex_ai:
+    endpoints:
+      - host: us-east5-aiplatform.googleapis.com
+        port: 443
+        protocol: rest
+        access: full
+      - host: aiplatform.googleapis.com
+        port: 443
+        protocol: rest
+        access: full
+    binaries:
+      - path: /sandbox/**
