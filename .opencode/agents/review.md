@@ -1,7 +1,7 @@
 ---
 description: "Review agent — reviews PRs through 3 lenses (correctness,
   security, quality). NEVER approves PRs."
-model: anthropic/claude-sonnet-4-6
+model: google-vertex-anthropic/claude-sonnet-4-6@default
 permission:
   read: allow
   edit: deny

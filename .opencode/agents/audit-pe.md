@@ -1,7 +1,7 @@
 ---
 description: "PE audit sub-agent — reviews fix plans for deployment
   safety, observability, configuration, and rollback."
-model: anthropic/claude-sonnet-4-6
+model: google-vertex-anthropic/claude-sonnet-4-6@default
 mode: subagent
 permission:
   read: allow

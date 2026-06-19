@@ -638,35 +638,33 @@ fix session.
 5. **Edge case**: Add both `bot-cancelled` and `no-autofix` — verify
    comment says "Ticket is opted out of automation" without retry hint
 
-### Test 22: Plan Approval Gate
+### Test 22: Two-Agent Plan Approval Flow
 
-**Goal**: Verify the human approval gate between audit and implementation.
+**Goal**: Verify the investigation agent stops at `bot-plan-ready` and
+the implementation agent is dispatched after human approval.
 
-**Prerequisites**: `PLAN_APPROVAL_REQUIRED=true` (default), a ticket
-that triggers the audit loop.
-
-1. Create a ticket with `autofix` label and a 3-5 file fix
-2. Run the fix agent — it investigates, writes plan, runs audit
-3. **Expected after audit approves**:
-   - Jira shows `## Fix Plan (vN — APPROVED, awaiting human review)`
-     with Root Cause, Approach, Planned Files, and Audit Trail sections
-   - Ticket label swaps from `bot-in-progress` to `bot-plan-ready`
-   - Agent session EXITS (does not proceed to implementation)
-4. **Verify**: No PR created, no code changes, no `## Fix Applied`
+1. Create a ticket with `autofix` label and a repo URL
+2. Run the investigation agent:
+   ```bash
+   opencode run --agent fix-investigate "Investigate Jira ticket OBSINTA-<N>. Jira Site: stage-redhat.atlassian.net"
+   ```
+3. **Expected**:
+   - Agent investigates, writes plan, runs audit (or skips for simple fix)
+   - Jira shows `## Fix Plan` comment with `APPROVED`, Root Cause,
+     Approach, Planned Files
+   - Label swaps from `bot-in-progress` to `bot-plan-ready`
+   - Session ends — no PR created, no code changes
+4. **Verify**: No `## Fix Applied` comment, no PR on GitHub
 5. Add `bot-proceed` label to the ticket
-6. Run the watcher
-7. **Expected**: Watcher Phase 1B picks up the ticket, swaps labels
-   to `bot-in-progress`, dispatches new fix agent session
-8. **Verify**: New session reads plan from Jira, implements fix,
-   creates PR, swaps to `bot-ready-for-review`
+6. Run the implementation agent (or watcher Phase 1B):
+   ```bash
+   opencode run --agent fix-implement "Implement the approved fix plan for OBSINTA-<N>. Jira Site: stage-redhat.atlassian.net"
+   ```
+7. **Expected**: Agent reads plan from Jira, clones repo, implements
+   fix, runs tests, creates PR, swaps to `bot-ready-for-review`
 
 **Rejection test**: Instead of step 5, add `bot-fix-failed` label.
 Verify ticket moves to failed state. Add `bot-retry` to re-process.
 
-**Timeout test**: Leave ticket in `bot-plan-ready` for >48h (or lower
-`PLAN_APPROVAL_TIMEOUT_HOURS` for testing). Run watcher. Verify ticket
-auto-fails with `## Plan Approval Timeout` comment.
-
-**Gate disabled test**: Set `PLAN_APPROVAL_REQUIRED=false`. Create a
-ticket. Verify agent proceeds directly from audit approval to
-implementation without stopping at `bot-plan-ready`.
+**Timeout test**: Leave ticket in `bot-plan-ready` for >48h. Run
+watcher. Verify auto-fail with `## Plan Approval Timeout` comment.

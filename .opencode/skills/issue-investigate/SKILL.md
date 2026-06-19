@@ -1,11 +1,11 @@
 ---
-name: issue-fix
-description: "Automated issue fixing skill. Investigates bugs, creates
-  audited fix plans via 3 independent sub-agents, implements minimal
-  targeted fixes, and creates PRs."
+name: issue-investigate
+description: "Investigation skill. Investigates bugs, writes fix plans,
+  runs 3-auditor review. Posts approved plan to Jira for human review.
+  Does NOT implement fixes or create PRs."
 ---
 
-# Issue Fix Skill
+# Issue Investigation Skill
 
 ## Automated Mode
 
@@ -16,8 +16,9 @@ confirm actions — validate preconditions, execute, verify results.
 ## Role
 
 Act as a senior developer and debugger. You systematically identify root
-causes, implement minimal targeted fixes, and write regression tests to
-prevent recurrence.
+causes, write detailed fix plans, and get them reviewed by audit
+sub-agents. You do NOT implement fixes or create PRs — a separate
+implementation agent handles that after human plan approval.
 
 ## MCP Tools Available
 
@@ -129,8 +130,8 @@ environment.
 
 Phase 0 is intentionally minimal to avoid wasting context. MCP accessibility
 is validated by Entry Gate 1 (Jira ticket fetch). Git identity is validated
-at `git commit` time (Phase 9). Optional tools (gitleaks, pre-commit) are
-checked lazily when needed (Phase 6).
+at `git commit` time (by the implementation agent). Optional tools
+(gitleaks, pre-commit) are checked by the implementation agent.
 
 ## Retry Context
 
@@ -242,7 +243,7 @@ fix attempt. Before proceeding to Phase 1:
    git config core.fsmonitor false
    ```
    Note: this disables the repo's native git hooks, NOT the `pre-commit`
-   framework. The agent's own `pre-commit run --all-files` in Phase 6
+   framework. The implementation agent's `pre-commit run --all-files`
    uses the pre-commit framework which is independent of `core.hooksPath`.
 3. Determine base branch (from ticket or repo default).
 4. Create fix branch — deterministic, no confirmation:
@@ -269,7 +270,7 @@ fix attempt. Before proceeding to Phase 1:
      ```
    - Add to git exclude: `echo .knowledge/ >> .git/info/exclude`
    - The agent can reference files in .knowledge/ during Phases 3-4B
-   - Clean up .knowledge/ after Phase 4B completes (before Phase 5)
+   - Clean up .knowledge/ after Phase 4B completes (before posting the plan)
 
 ## Phase 3: Investigate
 
@@ -419,12 +420,12 @@ from Phase 1. Rules are ordered — first match wins:
 
 3. ELSE IF signal is concurrency, performance, or dependency:
      → Single audit iteration minimum (these fix types are high-risk)
-     → If approved on first pass → proceed to Phase 5
+     → If approved on first pass → proceed to POST PLAN AND EXIT
      → If findings exist → run up to 2 more iterations
 
 4. ELSE IF any complex signal (3+ files, 20+ lines, new tests needed):
      → Single audit iteration
-     → If approved on first pass → proceed to Phase 5
+     → If approved on first pass → proceed to POST PLAN AND EXIT
      → If findings exist → run up to 2 more iterations
 
 5. ELSE (all simple AND all confidence HIGH AND signal is default,
@@ -452,13 +453,7 @@ Audit disabled by configuration.
 - `path/to/file.ext` — <change description>
 ```
 
-**Human Approval Gate:** Check `$PLAN_APPROVAL_REQUIRED`:
-- If "true": append to the comment:
-  `**To authorize implementation:** Add label bot-proceed to this ticket.`
-  `**To reject:** Add label bot-fix-failed and comment with your reason.`
-  Then swap labels: `bot-in-progress → bot-plan-ready`. EXIT session.
-- If "false" or unset: append `Proceeding to implementation.` and skip
-  to Phase 5.
+Then go to **>>> POST PLAN AND EXIT** below.
 
 **Check 2 — Is this a simple fix that can skip audit?**
 If `$AUDIT_SKIP_SIMPLE` is "true" (default) AND rule 5 matches (all
@@ -477,13 +472,50 @@ Simple fix — all confidence HIGH, ≤2 files, <20 lines.
 - `path/to/file.ext` — <change description>
 ```
 
-**Human Approval Gate:** Check `$PLAN_APPROVAL_REQUIRED`:
-- If "true": append to the comment:
-  `**To authorize implementation:** Add label bot-proceed to this ticket.`
-  `**To reject:** Add label bot-fix-failed and comment with your reason.`
-  Then swap labels: `bot-in-progress → bot-plan-ready`. EXIT session.
-- If "false" or unset: append `Proceeding to implementation.` and skip
-  to Phase 5.
+Then go to **>>> POST PLAN AND EXIT** below.
+
+### >>> POST PLAN AND EXIT
+
+This is the final step for ALL approval paths (audit-disabled,
+audit-skipped, and audit-loop-approved).
+
+1. Create the plan directory and write the plan file:
+   ```bash
+   mkdir -p .autofix/<PROJECT-KEY>/<TICKET-KEY>
+   ```
+   Write the plan to `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md`. Use the enriched
+   format with Root Cause, Approach, Planned Files, and Audit Trail
+   sections. This file is the implementation specification — the
+   implementation agent reads it from disk.
+2. Commit and push the plan file:
+   ```bash
+   git add .autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md
+   git commit -m "docs: add fix plan for <TICKET-KEY>
+
+   Investigation complete. Plan awaiting human approval.
+
+   Assisted-by: Claude Code / <model version> (Anthropic)"
+   git push -u origin "$BRANCH"
+   ```
+3. Post a Jira comment with a summary and link to the plan file:
+   ```
+   ## Fix Plan (APPROVED, awaiting human review)
+
+   **Plan file**: [.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md](<github_url>/blob/<BRANCH>/.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md)
+   **Branch**: <BRANCH>
+   **Confidence**: HIGH/MEDIUM/LOW
+
+   <1-2 sentence summary of root cause and approach>
+
+   **To authorize implementation:** Add label `bot-proceed` to this ticket.
+   You may edit `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` on the branch before approving — the
+   implementation agent will use the latest version.
+   **To reject:** Add label `bot-fix-failed` and comment with your reason.
+   ```
+4. Swap labels: remove `bot-in-progress`, add `bot-plan-ready`
+5. Verify the label swap succeeded (re-fetch ticket)
+6. Your work is complete. The implementation agent will be dispatched
+   after human approval.
 
 **Otherwise:** Proceed to Phase 4B with the iteration count determined
 by the matched rule (rule 1/2: up to $AUDIT_MAX_ITERATIONS, rule 3:
@@ -521,9 +553,9 @@ vars. Use the default values listed above if not set.
    REMAINING_MIN=$(( (SESSION_TTL * 60 - ELAPSED) / 60 ))
    ```
    - If REMAINING_MIN < 45: skip remaining iterations, proceed to
-     Phase 5 with current plan. Post Jira comment: "Audit truncated
-     — insufficient TTL remaining (${REMAINING_MIN}m)."
-   - If REMAINING_MIN < 20: proceed to Phase 5 immediately.
+     POST PLAN AND EXIT with current plan. Post Jira comment: "Audit
+     truncated — insufficient TTL remaining (${REMAINING_MIN}m)."
+   - If REMAINING_MIN < 20: proceed to POST PLAN AND EXIT immediately.
 
 2. **Post Jira heartbeat**:
    ```
@@ -615,7 +647,7 @@ timeout gap and continue with the remaining verdicts.
 
 **All-3-timeout:** If all 3 sub-agents time out in an iteration, do NOT
 treat zero findings as approval. Exit the audit loop entirely and
-proceed to Phase 5 with Jira comment: "Audit skipped — all 3 auditors
+proceed to POST PLAN AND EXIT with Jira comment: "Audit skipped — all 3 auditors
 timed out. Proceeding without audit."
 
 ### Combine Findings
@@ -726,15 +758,8 @@ comment contains all required sections: `Root Cause`, `Approach`,
 If still incomplete, mark `bot-fix-failed` with "Plan comment
 incomplete — cannot proceed."
 
-**Human Approval Gate:** Check `$PLAN_APPROVAL_REQUIRED`:
-- If "true": append to the comment:
-  `**To authorize implementation:** Add label bot-proceed to this ticket.`
-  `**To reject:** Add label bot-fix-failed and comment with your reason.`
-  Then swap labels: `bot-in-progress → bot-plan-ready`. EXIT session.
-  Do NOT proceed to Phase 5.
-- If "false" or unset: change the comment header to
-  `## Fix Plan (vN — APPROVED)` (without "awaiting human review")
-  and proceed to Phase 5.
+Then go to **>>> POST PLAN AND EXIT** above (in Phase 4A).
+The same exit applies here — post enriched plan and swap to bot-plan-ready.
 
 ### RTK Resume
 
@@ -754,325 +779,8 @@ rm -rf .knowledge/
 This frees disk and context — .knowledge/ is only needed during
 investigation (Phase 3) and audit (Phase 4B).
 
-### Context Compaction
+### Final Step
 
-After exiting the audit loop, you MUST reduce context before Phase 5:
-1. Ensure the final approved plan is saved to `.audit/approved-plan.md`
-2. Summarize the audit trail into one paragraph for reference
-3. You MUST discard ALL detailed sub-agent responses, raw findings
-   JSON, and iteration-by-iteration audit details from working memory.
-   Retain ONLY the approved plan summary and the one-paragraph audit
-   trail. Phase 5 reads the full plan from `.audit/approved-plan.md`
-   on disk — it does not need the audit details in context.
-
-## Phase 5: Implement Fix
-
-**Resumed session check:** If this session was dispatched after human
-plan approval (i.e., you were told to "skip to Phase 5" or "resume
-from approved plan"), the sandbox is fresh — no `.audit/` directory
-exists. Read the approved plan from Jira instead:
-1. Fetch the ticket via `atlassian_jira_get_issue`
-2. Find the most recent `## Fix Plan (v` comment with `APPROVED` in
-   the header
-3. Extract Root Cause, Approach, and Planned Files sections
-4. Use these as the implementation specification
-
-If `.audit/approved-plan.md` exists on disk (same-session flow, gate
-was off), use that file instead.
-
-1. Read the approved plan and implement according to the audited approach.
-2. Make the minimal change necessary to fix the issue.
-3. Follow the repository's coding conventions (from CLAUDE.md).
-4. Do NOT introduce unrelated changes or refactors.
-5. After each change, verify the code compiles/lints:
-   - Go: `go build ./... && go vet ./...`
-   - Python: `python -m py_compile <file>`
-   - TypeScript: `npx tsc --noEmit`
-   - JavaScript: `npx eslint <file>`
-6. At the END of Phase 5 (all edits complete), run a final build+lint
-   check and record results:
-   ```bash
-   # Record to .audit/validation.json (create if not exists)
-   # Set build_passed and lint_passed based on final check results
-   ```
-
-## Phase 6: Pre-PR Checks
-
-1. Run pre-commit hooks if `.pre-commit-config.yaml` exists:
-   ```bash
-   pre-commit run --all-files
-   ```
-2. Self-review the diff:
-   ```bash
-   git diff
-   ```
-   Verify: no unintended changes, no secrets, no debug code, commit
-   scope matches the fix.
-3. Stage only the relevant files (never `git add .`):
-   ```bash
-   git add path/to/changed/files
-   ```
-4. **Sensitive file blocklist** — run AFTER staging, BEFORE commit.
-   Check staged files against deterministic patterns. This catches what
-   LLM judgment might miss. Uses basename matching (not full path) to
-   avoid false positives on directory names like `secrets/config.go`:
-   ```bash
-   set -f  # disable glob expansion so *.pem is treated as a pattern, not expanded
-   SENSITIVE_PATTERNS=".env .env.local .env.production credentials.json token.json .git-credentials .netrc .npmrc .pypirc kubeconfig terraform.tfvars"
-   SENSITIVE_GLOBS="*.pem *.key *.p12 *.pfx *.jks *.asc *.secret *.secrets secrets.yaml secrets.json"
-   SENSITIVE_SSH="id_rsa id_dsa id_ed25519 id_ecdsa"
-   ALL_PATTERNS="$SENSITIVE_PATTERNS $SENSITIVE_GLOBS $SENSITIVE_SSH"
-   BLOCKED=""
-   while IFS= read -r file; do
-     base=$(basename "$file")
-     for pat in $ALL_PATTERNS; do
-       if [[ "$base" == $pat ]]; then
-         echo "BLOCKED: $file matches sensitive pattern $pat"
-         git reset HEAD -- "$file"
-         BLOCKED="$BLOCKED $file"
-       fi
-     done
-   done < <(git diff --cached --name-only)
-   set +f  # re-enable glob expansion
-   ```
-   If any files were blocked (`BLOCKED` is non-empty): log a warning in
-   the Jira milestone comment. This is a soft block — unstage the file
-   and continue. The commit proceeds with remaining staged files.
-
-   Update `.audit/validation.json`:
-   - `sensitive_files_check`: "passed" (no matches) or "blocked" (files unstaged)
-   - `sensitive_files_blocked`: list of blocked filenames (empty array if none)
-
-5. Update `.audit/validation.json` with pre-commit result:
-   - `pre_commit_passed`: true/false/null (no hooks)
-
-## Phase 7: Test
-
-1. Look for test scripts in package.json, Makefile, or CI config.
-2. Run relevant tests (prefer targeted tests over the full suite):
-   ```bash
-   # Examples:
-   make test-unit
-   go test ./path/to/affected/...
-   pytest tests/test_affected.py
-   npm test
-   ```
-3. If tests fail, investigate and fix. Track iterations.
-4. After 3 failed test-fix iterations, STOP and mark as failed.
-5. Post Jira milestone comment: "Tests passing."
-6. Update `.audit/validation.json` with test results:
-   - `tests_passed`: true/false
-   - `tests_total`: N (total tests run)
-   - `tests_failed`: N (failed count)
-
-## Phase 8: Write Regression Test
-
-1. If the affected area has existing tests, add a test that would have
-   caught the original bug.
-2. If no tests exist but the fix is testable, write a minimal test.
-3. Verify the new test fails without the fix and passes with it.
-4. Update `.audit/validation.json` with regression test results:
-   - `regression_added`: true/false
-   - `regression_validates`: true/false (fails without fix, passes with)
-5. Record diff stats for telemetry:
-   ```bash
-   git diff --cached --stat
-   ```
-   Update `.audit/validation.json`:
-   - `diff_additions`: N
-   - `diff_deletions`: N
-   - `files_touched`: N
-
-## Phase 9: Commit and Create PR
-
-Replace `<model version>` with the model reported by the runtime (e.g.,
-`Opus 4.6`). Do not hardcode a specific model version.
-
-1. Commit with conventional format and AI attribution:
-   ```bash
-   git commit -m "$(cat <<'EOF'
-   fix(<component>): <brief description>
-
-   Resolves <TICKET-KEY>
-
-   Root cause: <what was wrong>
-   Fix: <what was changed and why>
-
-   Assisted-by: Claude Code / <model version> (Anthropic)
-   EOF
-   )"
-   ```
-2. Push the branch:
-   ```bash
-   git push -u origin "$BRANCH"
-   ```
-3. Create PR:
-   ```bash
-   gh pr create \
-     --title "fix(<component>): <summary>" \
-     --body "$(cat <<'EOF'
-   <!-- issue-fix-agent:jira=<TICKET-KEY> session=$OPENCODE_SESSION_ID -->
-
-   ## Summary
-   <Brief description of the fix>
-
-   ## Root Cause
-   <What was wrong and why>
-
-   ## Changes
-   - <file>: <what changed and why>
-
-   ## Testing
-   - [x] Existing tests pass
-   - [x] Regression test added
-
-   ## Jira
-   [<TICKET-KEY>](https://<JIRA_SITE>/browse/<TICKET-KEY>)
-
-   ---
-   Assisted-by: Claude Code / <model version> (Anthropic)
-   EOF
-   )" \
-     --label "issue-fix-agent"
-   ```
-
-## Phase 10: Update Jira
-
-**IMPORTANT: Post the Jira comment BEFORE the label swap.** The label
-swap makes the ticket visible to the watcher's review dispatch. The
-`## Fix Applied` comment must exist before the review agent is
-dispatched, because the review agent reads the PR URL from it.
-
-1. Attempt Jira status transition to "Review" via
-   `atlassian_jira_transition_issue`. If transition fails due to missing
-   gate fields, skip and proceed with label-only tracking.
-2. Compute session duration:
-   ```bash
-   ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))
-   ```
-
-3. Read `.audit/validation.json` for validation results.
-
-4. Re-assess **Fix Confidence** using mechanical rules (same 3
-   dimensions as Plan Confidence — compare to see if anything changed):
-   - Root cause: HIGH if single file, MEDIUM if 2-3 candidates, LOW if unclear
-   - Approach: HIGH if matches codebase pattern, MEDIUM if alternatives exist, LOW if best guess
-   - Scope: HIGH if grep confirmed all sites, MEDIUM if cross-package, LOW if broad impact
-
-5. Add structured Jira comment via `atlassian_jira_add_comment`
-   using this EXACT template (fill in all fields):
-   ```
-   ## Fix Applied
-   **PR**: [#N](<pr_url>)
-   **Branch**: <branch_name>
-   **Changes**: N files (+X, -Y)
-   **Summary**: <what was changed and why>
-   **Tests**: Passing
-   **Session**: <session_link>
-
-   ---
-   **Session Telemetry**
-   | Metric | Value |
-   |--------|-------|
-   | Model | <model from session context> |
-   | Duration | <ELAPSED_MIN>m |
-   | Audit | <N iterations, approved/skipped/disabled> |
-
-   **Fix Confidence** (agent self-assessed, mechanical rules)
-   | Dimension | Score | Rule Applied |
-   |-----------|-------|-------------|
-   | Root cause | <HIGH/MEDIUM/LOW> | <evidence> |
-   | Approach | <HIGH/MEDIUM/LOW> | <evidence> |
-   | Scope | <HIGH/MEDIUM/LOW> | <evidence> |
-   | **Overall** | **<HIGH/MEDIUM/LOW>** | |
-
-   **Validation** (from .audit/validation.json)
-   | Check | Result |
-   |-------|--------|
-   | Build | <Passed/Failed> |
-   | Lint | <Passed/Failed> |
-   | Tests | <Passed/Failed (N/N)> |
-   | Regression test | <Added, validates fix / Not added> |
-   | Pre-commit hooks | <Passed/Failed/N/A> |
-   | Diff size | <+N / -N (N files)> |
-   ```
-
-6. **RTK Metrics** (if $RTK_WAS_ACTIVE is true):
-   ```bash
-   rtk gain --json
-   ```
-   Append to the Jira comment:
-   ```
-   **RTK Token Savings**
-   | Metric | Value |
-   |--------|-------|
-   | Commands filtered | <total_commands> |
-   | Tokens saved | <savings_count> (<savings_pct>%) |
-   ```
-   If any single command shows >95% savings, add a warning:
-   "RTK savings unusually high on <cmd> (>95%) — verify output was
-   not over-filtered."
-
-7. **LAST STEP — Label swap** (after all comments are posted):
-   Atomic label swap using `atlassian_jira_update_issue`:
-   - Remove `bot-in-progress`
-   - Add `bot-ready-for-review`
-   This is the LAST action because it makes the ticket visible to
-   the watcher's review dispatch. The `## Fix Applied` comment must
-   already exist when the review agent is dispatched.
-
-## Failure Protocol
-
-If at any point you cannot proceed:
-
-1. Document what was attempted and what failed.
-2. Atomic label swap using `atlassian_jira_update_issue`:
-   - Remove `bot-in-progress`
-   - Add `bot-fix-failed`
-3. Compute duration: `ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))`
-4. Read `.audit/validation.json` if it exists (may be partial).
-5. Add Jira comment with failure details + partial telemetry:
-   ```
-   ## Fix Failed
-   **Phase**: <which phase failed (e.g., Phase 4B: Audit Loop)>
-   **Attempted**: <what was tried>
-   **Failure**: <what went wrong>
-   **Files Investigated**: <list>
-   **Session**: <session_link>
-
-   ---
-   **Session Telemetry**
-   | Metric | Value |
-   |--------|-------|
-   | Model | <model from session context> |
-   | Duration | <ELAPSED_MIN>m |
-   | Phase reached | <last phase completed> |
-
-   **Partial Validation** (from .audit/validation.json, if available)
-   | Check | Result |
-   |-------|--------|
-   | <checks completed so far> | <results> |
-
-   To retry with a different approach, add the `bot-retry` label (max 2 retries).
-   ```
-6. Do NOT create a partial PR.
-7. Phase-aware cleanup:
-   - **During Phase 4A/4B** (plan + audit): no PR exists yet. Delete
-     the remote branch if it was pushed in Phase 2. Clean up `.audit/`
-     directory.
-   - **During Phase 5-10** (implementation): delete the remote branch
-     if pushed. Do NOT create a partial PR.
-
-## Exit Gates
-
-Before completing, verify all of the following:
-
-1. PR created and linked in Jira comment
-2. All tests pass (including regression test)
-3. Jira labels updated atomically (`bot-in-progress` → `bot-ready-for-review`)
-4. Jira comment with PR details and changes summary added
-5. No uncommitted changes left in the working directory
-6. `.audit/` directory is excluded from the commit (add to .gitignore
-   or .git/info/exclude if not already excluded)
-
-If any exit gate fails, return to the relevant phase to address it.
+Save the approved plan to `.audit/approved-plan.md` for reference,
+then go to **>>> POST PLAN AND EXIT** above to post the enriched
+plan comment and swap labels.

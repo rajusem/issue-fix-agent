@@ -11,13 +11,14 @@ lifecycle from ticket to merged PR.
 ## How It Works
 
 1. A user creates a Jira ticket with the `autofix` label and includes the repository URL in the description
-2. The **Watcher** polls Jira on a schedule, picks up the ticket, and dispatches a **Fix Agent**
-3. The **Fix Agent** clones the repo, investigates the issue, writes a structured fix plan, and runs it through 3 independent audit sub-agents (Architecture, PE, Language Expert) for review before writing code
-4. After audit approval, the Fix Agent implements the fix, runs tests, creates a PR, and updates Jira
-5. The **Review Agent** reviews the PR through 3 lenses (correctness, security, quality)
-6. If the review finds issues, the **Review-Fix Agent** addresses them and sends back for re-review (max 3 cycles)
-7. When the review passes, a human approves and merges the PR
-8. The Watcher detects the merge and updates Jira with the `bot-merged` label
+2. The **Watcher** polls Jira on a schedule, picks up the ticket, and dispatches the **Investigation Agent**
+3. The **Investigation Agent** clones the repo, investigates the issue, writes a structured fix plan, and runs it through 3 independent audit sub-agents (Architecture, PE, Language Expert) for review
+4. After audit approval, the agent posts the plan to Jira and sets `bot-plan-ready` — a **human reviews and approves** the plan
+5. After human approval (`bot-proceed`), the Watcher dispatches the **Implementation Agent** which implements the fix, runs tests, and creates a PR
+6. The **Review Agent** reviews the PR through 3 lenses (correctness, security, quality)
+7. If the review finds issues, the **Review-Fix Agent** addresses them and sends back for re-review (max 3 cycles)
+8. When the review passes, a human approves and merges the PR
+9. The Watcher detects the merge and updates Jira with the `bot-merged` label
 
 ## Jira Ticket Format
 

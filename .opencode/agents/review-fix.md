@@ -1,7 +1,7 @@
 ---
 description: "Review-fix agent — addresses code review findings, pushes
   to same branch. Max 3 cycles."
-model: anthropic/claude-opus-4-6
+model: google-vertex-anthropic/claude-opus-4-6@default
 permission:
   read: allow
   edit: allow

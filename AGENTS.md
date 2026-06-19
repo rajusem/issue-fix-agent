@@ -14,7 +14,8 @@ Jira (autofix label) → Watcher → Fix Agent → Review Agent ↔ Review-Fix A
 
 | Agent | Definition | Purpose | Model |
 |-------|-----------|---------|-------|
-| `fix` | `.opencode/agents/fix.md` | Clones repo, investigates, fixes, creates PR | Opus |
+| `fix-investigate` | `.opencode/agents/fix-investigate.md` | Investigates bugs, writes audited fix plans (Phases 0-4) | Opus |
+| `fix-implement` | `.opencode/agents/fix-implement.md` | Implements approved plans, creates PRs (Phases 5-11) | Opus |
 | `review` | `.opencode/agents/review.md` | Reviews PR through 3 lenses, posts findings | Sonnet |
 | `review-fix` | `.opencode/agents/review-fix.md` | Addresses review findings, pushes to same branch | Opus |
 | `audit-*` | `.opencode/agents/audit-*.md` | Sub-agents for fix plan audit (architecture, PE, language) | Sonnet |

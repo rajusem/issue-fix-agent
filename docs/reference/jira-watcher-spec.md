@@ -169,15 +169,16 @@ Use `atlassian_jira_search` with the JQL above.
    git config):
    ```json
    {
-     "prompt": "Fix the issue described in Jira ticket <TICKET-KEY>. Follow the issue-fix skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URLs: <comma-separated URLs or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nAllowed Repo Hosts: <comma-separated from projects.json>\nKnowledge Repo: <url or 'none'>\nKnowledge Repo Allowlist: <comma-separated from projects.json>\nAUDIT_ENABLED: <AUDIT_ENABLED from config.env, default true>\nAUDIT_MAX_ITERATIONS: <AUDIT_MAX_ITERATIONS from config.env, default 3>\nAUDIT_SKIP_SIMPLE: <AUDIT_SKIP_SIMPLE from config.env, default true>\nAUDIT_MODEL: <AUDIT_MODEL from config.env, default claude-sonnet-4-6>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
-     "name": "fix-<ticket-key-lower>",
+     "prompt": "Investigate the issue described in Jira ticket <TICKET-KEY>. Follow the issue-investigate skill.\n\nTicket: <TICKET-KEY>\nRepository: <repo_url>\nBranch: <branch>\nCommit: <commit_sha or 'none'>\nSkill URLs: <comma-separated URLs or 'none'>\nSkill URL Allowlist: <comma-separated patterns from projects.json>\nAllowed Repo Hosts: <comma-separated from projects.json>\nKnowledge Repo: <url or 'none'>\nKnowledge Repo Allowlist: <comma-separated from projects.json>\nAUDIT_ENABLED: <AUDIT_ENABLED from config.env, default true>\nAUDIT_MAX_ITERATIONS: <AUDIT_MAX_ITERATIONS from config.env, default 3>\nAUDIT_SKIP_SIMPLE: <AUDIT_SKIP_SIMPLE from config.env, default true>\nAUDIT_MODEL: <AUDIT_MODEL from config.env, default claude-sonnet-4-6>\nRTK_ENABLED: <RTK_ENABLED from config.env, default false>",
+     "name": "investigate-<ticket-key-lower>",
+     "agent": "fix-investigate",
      "labels": {
        "jira-ticket": "<TICKET-KEY>",
-       "type": "issue-fix"
+       "type": "issue-investigate"
      },
      "model": "<FIX_MODEL>",
-     "repos": [{"url": "<repo_url>", "branch": "<branch>", "autoPush": true}],
-     "timeout": "<FIX_SESSION_TTL * 60>"
+     "repos": [{"url": "<repo_url>", "branch": "<branch>"}],
+     "timeout": "<INVESTIGATE_SESSION_TTL * 60>"
    }
    ```
 
@@ -210,15 +211,16 @@ JQL: labels = bot-plan-ready AND labels = bot-proceed AND labels NOT IN (bot-in-
 5. Dispatch fix agent session (implementation only):
    ```json
    {
-     "prompt": "Resume from approved plan on <TICKET-KEY>. Read the ## Fix Plan comment with APPROVED in the header from Jira. Skip Phases 1-4. Start at Phase 5: Implement Fix. Jira Site: <JIRA_SITE>",
-     "name": "fix-impl-<ticket-key-lower>",
+     "prompt": "Implement the approved fix plan for <TICKET-KEY>. Follow the issue-implement skill. Read .autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md from the repo root for the plan. Jira Site: <JIRA_SITE>",
+     "name": "implement-<ticket-key-lower>",
+     "agent": "fix-implement",
      "labels": {
        "jira-ticket": "<TICKET-KEY>",
-       "type": "issue-fix-impl"
+       "type": "issue-implement"
      },
      "model": "<FIX_MODEL>",
-     "repos": [{"url": "<repo_url>", "branch": "<branch>", "autoPush": true}],
-     "timeout": "<FIX_SESSION_TTL * 60>"
+     "repos": [{"url": "<repo_url>", "branch": "<fix-branch-from-jira-comment>", "autoPush": true}],
+     "timeout": "<IMPLEMENT_SESSION_TTL * 60>"
    }
    ```
 6. Add Jira comment:

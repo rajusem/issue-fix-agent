@@ -1,7 +1,7 @@
 ---
 description: "Language expert audit sub-agent — reviews fix plans for
   idiomatic patterns, common pitfalls, language-specific best practices."
-model: anthropic/claude-sonnet-4-6
+model: google-vertex-anthropic/claude-sonnet-4-6@default
 mode: subagent
 permission:
   read: allow
