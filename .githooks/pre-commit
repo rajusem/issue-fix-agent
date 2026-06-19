@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Secret detection pre-commit hook for issue-fix-agent
+# Blocks commits containing secrets, keys, tokens, or sensitive files.
+# Works as a second layer alongside rh-pre-commit (LeakTK).
+
+set -euo pipefail
+
+BLOCKED=0
+
+# --- Check 1: Sensitive file patterns ---
+set -f
+SENSITIVE_NAMES=".env .env.local .env.production credentials.json token.json .git-credentials .netrc .npmrc .pypirc kubeconfig terraform.tfvars"
+SENSITIVE_GLOBS="*.pem *.key *.p12 *.pfx *.jks *.asc *.secret *.secrets secrets.yaml secrets.json"
+SENSITIVE_SSH="id_rsa id_dsa id_ed25519 id_ecdsa"
+ALL_PATTERNS="$SENSITIVE_NAMES $SENSITIVE_GLOBS $SENSITIVE_SSH"
+
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  base=$(basename "$file")
+  for pat in $ALL_PATTERNS; do
+    if [[ "$base" == $pat ]]; then
+      echo "BLOCKED: '$file' matches sensitive file pattern '$pat'"
+      BLOCKED=1
+    fi
+  done
+done < <(git diff --cached --name-only --diff-filter=ACM)
+set +f
+
+# --- Check 2: Content patterns in staged diffs ---
+CONTENT_PATTERNS=(
+  'AKIA[0-9A-Z]{16}'                          # AWS access key
+  'AIza[0-9A-Za-z_-]{35}'                     # Google API key
+  'ghp_[0-9a-zA-Z]{36}'                       # GitHub PAT
+  'gho_[0-9a-zA-Z]{36}'                       # GitHub OAuth
+  'github_pat_[0-9a-zA-Z_]{82}'               # GitHub fine-grained PAT
+  'glpat-[0-9a-zA-Z_-]{20}'                   # GitLab PAT
+  'sk-[0-9a-zA-Z]{48}'                        # OpenAI/Anthropic key
+  'xox[bpors]-[0-9a-zA-Z-]+'                  # Slack token
+  'ATATT[0-9a-zA-Z_/+=]{50,}'                 # Atlassian API token
+  '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+  'password\s*[:=]\s*["\x27][^"\x27]{8,}'     # password assignments
+  'api[_-]?key\s*[:=]\s*["\x27][^"\x27]{16,}' # api key assignments
+  'bearer\s+[0-9a-zA-Z._~+/=-]{20,}'         # bearer tokens
+)
+
+STAGED_DIFF=$(git diff --cached -U0 --diff-filter=ACM 2>/dev/null || true)
+
+if [ -n "$STAGED_DIFF" ]; then
+  for pattern in "${CONTENT_PATTERNS[@]}"; do
+    matches=$(echo "$STAGED_DIFF" | grep -nE "^\+" | grep -iE "$pattern" 2>/dev/null || true)
+    if [ -n "$matches" ]; then
+      echo "BLOCKED: Staged diff matches secret pattern: $pattern"
+      echo "$matches" | head -3
+      BLOCKED=1
+    fi
+  done
+fi
+
+# --- Check 3: Large binary files (>1MB) ---
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if [ -f "$file" ]; then
+    size=$(wc -c < "$file" 2>/dev/null || echo 0)
+    if [ "$size" -gt 1048576 ]; then
+      echo "BLOCKED: '$file' is $(( size / 1024 ))KB — binary/large files should not be committed"
+      BLOCKED=1
+    fi
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+# --- Result ---
+if [ "$BLOCKED" -eq 1 ]; then
+  echo ""
+  echo "Commit blocked by .githooks/pre-commit secret detection."
+  echo "If this is a false positive, use: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
