@@ -442,12 +442,23 @@ regardless of complexity. Post Jira comment:
 ## Fix Plan (v1 — APPROVED, audit disabled)
 Audit disabled by configuration.
 
-**Planned Files**:
-- `path/to/file.ext` — <change description>
+### Root Cause
+<1-2 sentences from investigation>
 
-Proceeding to implementation.
+### Approach
+<what the fix does and why>
+
+### Planned Files
+- `path/to/file.ext` — <change description>
 ```
-Then skip to Phase 5.
+
+**Human Approval Gate:** Check `$PLAN_APPROVAL_REQUIRED`:
+- If "true": append to the comment:
+  `**To authorize implementation:** Add label bot-proceed to this ticket.`
+  `**To reject:** Add label bot-fix-failed and comment with your reason.`
+  Then swap labels: `bot-in-progress → bot-plan-ready`. EXIT session.
+- If "false" or unset: append `Proceeding to implementation.` and skip
+  to Phase 5.
 
 **Check 2 — Is this a simple fix that can skip audit?**
 If `$AUDIT_SKIP_SIMPLE` is "true" (default) AND rule 5 matches (all
@@ -456,12 +467,23 @@ simple signals, all HIGH confidence), skip the audit loop. Post:
 ## Fix Plan (v1 — APPROVED, audit skipped)
 Simple fix — all confidence HIGH, ≤2 files, <20 lines.
 
-**Planned Files**:
-- `path/to/file.ext` — <change description>
+### Root Cause
+<1-2 sentences from investigation>
 
-Proceeding to implementation.
+### Approach
+<what the fix does and why>
+
+### Planned Files
+- `path/to/file.ext` — <change description>
 ```
-Then skip to Phase 5.
+
+**Human Approval Gate:** Check `$PLAN_APPROVAL_REQUIRED`:
+- If "true": append to the comment:
+  `**To authorize implementation:** Add label bot-proceed to this ticket.`
+  `**To reject:** Add label bot-fix-failed and comment with your reason.`
+  Then swap labels: `bot-in-progress → bot-plan-ready`. EXIT session.
+- If "false" or unset: append `Proceeding to implementation.` and skip
+  to Phase 5.
 
 **Otherwise:** Proceed to Phase 4B with the iteration count determined
 by the matched rule (rule 1/2: up to $AUDIT_MAX_ITERATIONS, rule 3:
@@ -676,18 +698,43 @@ Post to Jira:
 
 Post to Jira:
 ```
-## Fix Plan (vN — APPROVED)
+## Fix Plan (vN — APPROVED, awaiting human review)
 **Audit Rounds**: N iterations
 **Findings Resolved**: X total across all iterations
 **False Positives Filtered**: Y total
 **Final Confidence**: HIGH/MEDIUM/LOW
 
-**Planned Files**:
-- `path/to/file1.go` — <change description>
-- `path/to/file2_test.go` — <change description>
+### Root Cause
+<1-2 sentences from investigation — what is broken and why>
 
-**Status**: Approved — proceeding to implementation
+### Approach
+<what the fix does and why this approach was chosen over alternatives>
+
+### Planned Files
+- `path/to/file1.go` — <specific change description>
+- `path/to/file2_test.go` — <specific change description>
+
+### Audit Trail
+- Architecture: <verdict> (<confidence>) — <one-line summary>
+- PE: <verdict> (<confidence>) — <one-line summary>
+- Language: <verdict> (<confidence>) — <one-line summary>
 ```
+
+**Plan Comment Validation:** Before proceeding, verify the posted
+comment contains all required sections: `Root Cause`, `Approach`,
+`Planned Files`. If any are missing, retry the comment write once.
+If still incomplete, mark `bot-fix-failed` with "Plan comment
+incomplete — cannot proceed."
+
+**Human Approval Gate:** Check `$PLAN_APPROVAL_REQUIRED`:
+- If "true": append to the comment:
+  `**To authorize implementation:** Add label bot-proceed to this ticket.`
+  `**To reject:** Add label bot-fix-failed and comment with your reason.`
+  Then swap labels: `bot-in-progress → bot-plan-ready`. EXIT session.
+  Do NOT proceed to Phase 5.
+- If "false" or unset: change the comment header to
+  `## Fix Plan (vN — APPROVED)` (without "awaiting human review")
+  and proceed to Phase 5.
 
 ### RTK Resume
 
@@ -720,8 +767,20 @@ After exiting the audit loop, you MUST reduce context before Phase 5:
 
 ## Phase 5: Implement Fix
 
-1. Read the approved plan from `.audit/approved-plan.md` and implement
-   according to the audited approach.
+**Resumed session check:** If this session was dispatched after human
+plan approval (i.e., you were told to "skip to Phase 5" or "resume
+from approved plan"), the sandbox is fresh — no `.audit/` directory
+exists. Read the approved plan from Jira instead:
+1. Fetch the ticket via `atlassian_jira_get_issue`
+2. Find the most recent `## Fix Plan (v` comment with `APPROVED` in
+   the header
+3. Extract Root Cause, Approach, and Planned Files sections
+4. Use these as the implementation specification
+
+If `.audit/approved-plan.md` exists on disk (same-session flow, gate
+was off), use that file instead.
+
+1. Read the approved plan and implement according to the audited approach.
 2. Make the minimal change necessary to fix the issue.
 3. Follow the repository's coding conventions (from CLAUDE.md).
 4. Do NOT introduce unrelated changes or refactors.

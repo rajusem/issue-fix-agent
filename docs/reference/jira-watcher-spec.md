@@ -14,6 +14,7 @@ type: workflow
 
 This skill runs one complete polling cycle:
 1. Pick up new `autofix` tickets → dispatch fix sessions
+1B. Pick up `bot-plan-ready` + `bot-proceed` tickets → dispatch implementation sessions
 2. Pick up `bot-ready-for-review` tickets → dispatch review sessions
 3. Pick up `bot-review-fix` tickets → dispatch review-fix sessions
 4. Check for merged/closed PRs → update Jira
@@ -21,6 +22,7 @@ This skill runs one complete polling cycle:
 6. Clean up stale sessions
 7. Re-check `bot-missing-info` tickets for added information
 8. Process retry requests (`bot-retry`)
+9. Check for stale `bot-plan-ready` tickets (timeout)
 
 After all phases, post a summary to Slack and exit.
 
@@ -186,6 +188,68 @@ Use `atlassian_jira_search` with the JQL above.
     **Model**: <model>
     **Started**: <timestamp>
     ```
+
+## Phase 1B: Plan Approval Dispatch
+
+Handles tickets where the fix agent has completed investigation and
+audit, posted the approved plan, and is waiting for human approval.
+Only runs when `PLAN_APPROVAL_REQUIRED=true` (default).
+
+### Query 1 — Approved plans ready to implement
+```
+JQL: labels = bot-plan-ready AND labels = bot-proceed AND labels NOT IN (bot-in-progress) AND project IN (<WATCHED_PROJECTS>)
+```
+
+### For each ticket:
+
+1. Read Jira ticket comments to extract repo URL and branch from the
+   original `## Agent Session Started` comment
+2. Check concurrency limits (`MAX_CONCURRENT_FIX_SESSIONS`)
+3. Remove labels: `bot-plan-ready`, `bot-proceed`
+4. Add label: `bot-in-progress`
+5. Dispatch fix agent session (implementation only):
+   ```json
+   {
+     "prompt": "Resume from approved plan on <TICKET-KEY>. Read the ## Fix Plan comment with APPROVED in the header from Jira. Skip Phases 1-4. Start at Phase 5: Implement Fix. Jira Site: <JIRA_SITE>",
+     "name": "fix-impl-<ticket-key-lower>",
+     "labels": {
+       "jira-ticket": "<TICKET-KEY>",
+       "type": "issue-fix-impl"
+     },
+     "model": "<FIX_MODEL>",
+     "repos": [{"url": "<repo_url>", "branch": "<branch>", "autoPush": true}],
+     "timeout": "<FIX_SESSION_TTL * 60>"
+   }
+   ```
+6. Add Jira comment:
+   ```
+   ## Agent Session Started (Implementation)
+   **Session**: [fix-impl-<ticket-key>](<session_url>)
+   **Model**: <model>
+   **Started**: <timestamp>
+   **Phase**: Implementing approved plan
+   ```
+
+### Query 2 — Stale unapproved plans (timeout)
+```
+JQL: labels = bot-plan-ready AND labels NOT IN (bot-proceed, bot-fix-failed, bot-in-progress) AND project IN (<WATCHED_PROJECTS>)
+```
+
+### For each ticket:
+
+1. Read Jira comments, find the most recent `## Fix Plan` comment
+   with `APPROVED` in the header
+2. Parse the comment timestamp. If older than
+   `PLAN_APPROVAL_TIMEOUT_HOURS` (default 48):
+   - Remove label: `bot-plan-ready`
+   - Add label: `bot-fix-failed`
+   - Post comment:
+     ```
+     ## Plan Approval Timeout
+     The approved plan has been waiting for human review for
+     >PLAN_APPROVAL_TIMEOUT_HOURS hours without response.
+     Marking as failed. To retry: add `bot-retry` label.
+     ```
 
 ## Phase 2: Review Dispatch
 

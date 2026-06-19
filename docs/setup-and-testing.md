@@ -637,3 +637,36 @@ fix session.
    (`bot-retry`) and opt-out (`no-autofix`)
 5. **Edge case**: Add both `bot-cancelled` and `no-autofix` — verify
    comment says "Ticket is opted out of automation" without retry hint
+
+### Test 22: Plan Approval Gate
+
+**Goal**: Verify the human approval gate between audit and implementation.
+
+**Prerequisites**: `PLAN_APPROVAL_REQUIRED=true` (default), a ticket
+that triggers the audit loop.
+
+1. Create a ticket with `autofix` label and a 3-5 file fix
+2. Run the fix agent — it investigates, writes plan, runs audit
+3. **Expected after audit approves**:
+   - Jira shows `## Fix Plan (vN — APPROVED, awaiting human review)`
+     with Root Cause, Approach, Planned Files, and Audit Trail sections
+   - Ticket label swaps from `bot-in-progress` to `bot-plan-ready`
+   - Agent session EXITS (does not proceed to implementation)
+4. **Verify**: No PR created, no code changes, no `## Fix Applied`
+5. Add `bot-proceed` label to the ticket
+6. Run the watcher
+7. **Expected**: Watcher Phase 1B picks up the ticket, swaps labels
+   to `bot-in-progress`, dispatches new fix agent session
+8. **Verify**: New session reads plan from Jira, implements fix,
+   creates PR, swaps to `bot-ready-for-review`
+
+**Rejection test**: Instead of step 5, add `bot-fix-failed` label.
+Verify ticket moves to failed state. Add `bot-retry` to re-process.
+
+**Timeout test**: Leave ticket in `bot-plan-ready` for >48h (or lower
+`PLAN_APPROVAL_TIMEOUT_HOURS` for testing). Run watcher. Verify ticket
+auto-fails with `## Plan Approval Timeout` comment.
+
+**Gate disabled test**: Set `PLAN_APPROVAL_REQUIRED=false`. Create a
+ticket. Verify agent proceeds directly from audit approval to
+implementation without stopping at `bot-plan-ready`.

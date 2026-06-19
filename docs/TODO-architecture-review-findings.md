@@ -1024,8 +1024,50 @@ Jira credentials, Vertex auth.
 3. This saves the full session TTL when the environment is misconfigured
 
 **Files to modify:**
-- `workflows/issue-fix/skills/issue-fix.md` — add Phase 0
-- `workflows/review-fix/skills/review-fix.md` — add Phase 0
+- `.opencode/skills/issue-fix/SKILL.md` — add Phase 0
+- `.opencode/skills/review-fix/SKILL.md` — add Phase 0
+
+---
+
+## Future Enhancements: Plan Approval Gate (post-MVP)
+
+Source: Architecture + PE + SDLC audit of the human approval gate
+design (2026-06-19). These were identified as valuable but deferred
+from the MVP implementation.
+
+1. **Auto-proceed for simple fixes** — If all 3 auditors vote HIGH
+   confidence AND fix is ≤2 files AND <20 lines, skip human gate
+   automatically. Log the auto-proceed for audit trail. (SDLC-005)
+
+2. **Slack approval integration** — Send Slack notification with
+   approve/reject buttons when `bot-plan-ready` is set. Reduces
+   context-switching from Jira to approve plans. (SDLC-003)
+
+3. **Approval metrics** — Track time-to-approval, rejection rate,
+   rubber-stamp rate (approved in <5 min). Surface in team
+   dashboards. (SDLC-004)
+
+4. **Conversational approval** — If human comments on Jira without
+   approving/rejecting, bot answers questions in a short session
+   before human decides. (SDLC-003)
+
+5. **Queue depth limit** — Add `MAX_QUEUED_FIX_SESSIONS` to prevent
+   approval bursts overwhelming concurrency slots. (PE-002)
+
+6. **Approval observability** — Alert when >3 tickets waiting
+   approval for >24h. Add to watcher cycle summary. (PE-005)
+
+7. **DRY_RUN interaction** — In shadow mode, skip the approval gate
+   and proceed to implementation (no human approval needed for dry
+   runs). (PE gap)
+
+8. **Multi-stakeholder approval** — For high-risk changes (CRITICAL
+   findings resolved), require security/PE sign-off in addition
+   to ticket owner. (SDLC gap)
+
+9. **Diff preview in plan** — Include pseudocode or expected diff
+   in the plan comment so humans can better evaluate the proposed
+   changes before approving. (SDLC gap)
 
 ---
 

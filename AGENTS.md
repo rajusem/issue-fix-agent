@@ -24,13 +24,15 @@ Jira (autofix label) → Watcher → Fix Agent → Review Agent ↔ Review-Fix A
 ```
 autofix (permanent)
   ↓ (missing repo URL)           ↓ (repo URL found)
-  bot-missing-info                bot-in-progress → bot-ready-for-review → bot-review-complete → bot-merged
-  (auto re-check: URL found                     ↘ bot-fix-failed     ↑
-   → removes label                                ↑ (user adds    bot-review-fix (max 3 cycles)
-   → re-enters queue)                             ↑  bot-retry)
-                                                  bot-fix-failed → bot-in-progress (retry, max 2)
+  bot-missing-info                bot-in-progress → bot-plan-ready → bot-in-progress → bot-ready-for-review → bot-review-complete → bot-merged
+  (auto re-check: URL found        (audit done)    (human adds       (implement)       ↘ bot-fix-failed     ↑
+   → removes label                                  bot-proceed)                          ↑ (user adds    bot-review-fix (max 3 cycles)
+   → re-enters queue)                                                                     ↑  bot-retry)
+                                                                     bot-fix-failed → bot-in-progress (retry, max 2)
 
 no-autofix — opt-out: ticket excluded from automation while keeping autofix label
+bot-plan-ready — plan approved by audit sub-agents, awaiting human review (PLAN_APPROVAL_REQUIRED=true)
+bot-proceed — human adds to authorize implementation after reviewing the plan
 bot-retry — user adds to bot-fix-failed ticket to trigger re-processing (max 2 retries)
 bot-cancelled — human override: stops active sessions, moves to bot-fix-failed
 ```
@@ -70,7 +72,8 @@ See `docs/Architecture.md` comment contracts table for the full list
 | `## PR Merged` | jira-watcher | — | Merge commit, merged-by |
 | `## Missing Information` | jira-watcher | — | What fields are needed |
 | `## Fix Plan (v*)` | issue-fix | issue-review | Plan version, approach, files, confidence |
-| `## Fix Plan (v* — APPROVED)` | issue-fix | issue-review | Final audited plan for compliance check |
+| `## Fix Plan (v* — APPROVED)` | issue-fix | issue-review | Final audited plan for compliance check (gate off) |
+| `## Fix Plan (v* — APPROVED, awaiting human review)` | issue-fix | issue-review, jira-watcher | Enriched plan with Root Cause, Approach, Audit Trail (gate on) |
 | `## Audit — Iteration N Starting` | issue-fix | — | Heartbeat: timestamp, plan version, remaining TTL |
 | `## Fix Plan (vN — Iteration N Revision)` | issue-fix | — | Revised plan with findings addressed, convergence |
 | `## Plan Compliance Failed` | issue-review | jira-watcher | Unplanned/missing files, divergence from audited plan |

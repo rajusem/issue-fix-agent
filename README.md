@@ -51,6 +51,8 @@ compatibility.
 | `autofix` | Permanent marker — ticket should be handled by automation |
 | `bot-missing-info` | Ticket missing required info — bot re-checks automatically each cycle |
 | `bot-in-progress` | Fix agent is working on it |
+| `bot-plan-ready` | Plan approved by auditors, awaiting human review |
+| `bot-proceed` | Human adds this to authorize implementation |
 | `bot-ready-for-review` | PR created, awaiting agent review |
 | `bot-review-fix` | Review found issues, review-fix agent is addressing them |
 | `bot-review-complete` | Agent review passed, awaiting human approval |
