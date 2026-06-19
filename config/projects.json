@@ -1,15 +1,12 @@
 {
-  "watched_projects": ["PROJ1", "PROJ2"],
+  "watched_projects": ["OBSINTA"],
   "skill_url_allowlist": [
-    "https://raw.githubusercontent.com/org/*/main/.claude/skills/*",
-    "https://raw.githubusercontent.com/org/*/.claude/skills/*"
+    "https://raw.githubusercontent.com/rajusem/*/main/.claude/skills/*",
+    "https://raw.githubusercontent.com/rajusem/*/.claude/skills/*"
   ],
-  "knowledge_repo_allowlist": [
-    "https://github.com/org/team-docs",
-    "https://github.com/org/architecture-docs"
-  ],
+  "knowledge_repo_allowlist": [],
   "allowed_repo_hosts": [
     "github.com"
   ],
-  "bot_service_account": "bot-autofix"
+  "bot_service_account": "rzalavad"
 }

@@ -2,8 +2,7 @@
 
 Automated issue-fixing system that watches Jira tickets labeled `autofix`,
 dispatches AI agents to fix issues, review code, and update Jira through
-a label-based state machine. Target runtime: OpenCode + OpenShell on
-OpenShift (migrating from Ambient Platform).
+a label-based state machine. Runs on OpenCode + OpenShell on OpenShift.
 
 ## Architecture
 
@@ -11,14 +10,14 @@ OpenShift (migrating from Ambient Platform).
 Jira (autofix label) → Watcher → Fix Agent → Review Agent ↔ Review-Fix Agent → Human Merge → bot-merged
 ```
 
-## Workflows
+## Agents
 
-| Workflow | Purpose | Model |
-|----------|---------|-------|
-| `jira-watcher` | Polls Jira, dispatches sessions, cleans up | Sonnet |
-| `issue-fix` | Clones repo, investigates, fixes, creates PR | Opus |
-| `issue-review` | Reviews PR through 3 lenses, posts findings | Sonnet |
-| `review-fix` | Addresses review findings, pushes to same branch | Opus |
+| Agent | Definition | Purpose | Model |
+|-------|-----------|---------|-------|
+| `fix` | `.opencode/agents/fix.md` | Clones repo, investigates, fixes, creates PR | Opus |
+| `review` | `.opencode/agents/review.md` | Reviews PR through 3 lenses, posts findings | Sonnet |
+| `review-fix` | `.opencode/agents/review-fix.md` | Addresses review findings, pushes to same branch | Opus |
+| `audit-*` | `.opencode/agents/audit-*.md` | Sub-agents for fix plan audit (architecture, PE, language) | Sonnet |
 
 ## Label State Machine
 
@@ -46,11 +45,11 @@ bot-cancelled — human override: stops active sessions, moves to bot-fix-failed
 ## MCP Tools
 
 All Jira operations use the `mcp-atlassian` MCP server:
-- `mcp__atlassian__getJiraIssue` — fetch ticket details
-- `mcp__atlassian__searchJiraIssuesUsingJql` — JQL search
-- `mcp__atlassian__editJiraIssue` — update labels/fields (label swaps)
-- `mcp__atlassian__addCommentToJiraIssue` — add comments
-- `mcp__atlassian__transitionJiraIssue` — status transitions
+- `atlassian_jira_get_issue` — fetch ticket details
+- `atlassian_jira_search` — JQL search
+- `atlassian_jira_update_issue` — update labels/fields (label swaps)
+- `atlassian_jira_add_comment` — add comments
+- `atlassian_jira_transition_issue` — status transitions
 
 If `editJiraIssue` is unavailable for labels, fall back to `curl` with
 Basic Auth using `$JIRA_USERNAME` / `$JIRA_API_TOKEN`.

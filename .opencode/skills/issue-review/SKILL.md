@@ -1,11 +1,8 @@
 ---
 name: issue-review
-description: "Automated code review skill for Ambient Platform. Adapted from
-  AAP SDLC Harness code-review (3-lens methodology, evidence gate, validation
-  chain) + review-pr-workflow (orchestration). Sequential single-pass mode.
-  Does NOT approve PRs."
-version: "1.1.0"
-type: review
+description: "Automated code review skill. 3-lens methodology (correctness,
+  security, quality) with evidence gates and validation chain. Sequential
+  single-pass mode. Does NOT approve PRs."
 ---
 
 # Issue Review Skill
@@ -20,7 +17,7 @@ quality. You are thorough, evidence-based, and fair.
 This skill runs unattended. It reviews a PR and posts findings but NEVER
 approves or requests changes. Final approval is for humans only.
 
-After every label swap via `mcp__atlassian__editJiraIssue`, re-fetch the
+After every label swap via `atlassian_jira_update_issue`, re-fetch the
 ticket to verify the expected labels are present. If inconsistent, retry
 once before following Failure Protocol. If the verification re-fetch itself
 fails (network/timeout error), log a warning and continue — do not trigger
@@ -46,7 +43,7 @@ methodology.
 
 Verify before starting — if any gate fails, follow the Failure Protocol.
 
-1. **Jira ticket accessible** — fetch via `mcp__atlassian__getJiraIssue`
+1. **Jira ticket accessible** — fetch via `atlassian_jira_get_issue`
 2. **`bot-ready-for-review` label present** — confirms proper dispatch
 3. **PR repo URL valid** — the repo URL extracted from the PR must start
    with `https://` and not contain `@` or `..` (lightweight defense-in-depth;
@@ -60,13 +57,13 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
    ```bash
    START_TIME=$(date +%s)
    ```
-2. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
+2. Read Jira ticket via `atlassian_jira_get_issue`:
    - Find the PR URL in ticket comments (look for `## Fix Applied` comment
      from the fix agent — this is a cross-workflow contract)
    - Extract PR number and repo from the URL
    - Count existing `## Agent Code Review` comments to determine cycle N
 3. If no PR URL found:
-   - Atomic label swap using `mcp__atlassian__editJiraIssue`:
+   - Atomic label swap using `atlassian_jira_update_issue`:
      remove `bot-ready-for-review`, add `bot-fix-failed`
    - Add comment: "No PR found in ticket comments."
    - Exit.
@@ -120,7 +117,7 @@ matching — the audit loop already validated the approach.
 
 6. **Divergence check** — if unplanned files exceed 50% of total PR
    files:
-   - Atomic label swap via `mcp__atlassian__editJiraIssue`:
+   - Atomic label swap via `atlassian_jira_update_issue`:
      `bot-ready-for-review` → `bot-fix-failed`
    - Post Jira comment:
      ```
@@ -252,7 +249,7 @@ If any check fails, either remove the finding or downgrade to Observation.
    EOF
    )"
    ```
-2. Update Jira using `mcp__atlassian__editJiraIssue`:
+2. Update Jira using `atlassian_jira_update_issue`:
    - Remove label `bot-ready-for-review`
    - Add label `bot-review-fix`
 3. Add Jira comment:
@@ -289,7 +286,7 @@ If any check fails, either remove the finding or downgrade to Observation.
    EOF
    )"
    ```
-2. Update Jira using `mcp__atlassian__editJiraIssue`:
+2. Update Jira using `atlassian_jira_update_issue`:
    - Remove label `bot-ready-for-review`
    - Add label `bot-review-complete`
 3. Add Jira comment:
@@ -336,12 +333,12 @@ follow the Failure Protocol.
 If the review cannot be completed:
 
 - **PR already merged** (success, not failure):
-  - Atomic label swap using `mcp__atlassian__editJiraIssue`:
+  - Atomic label swap using `atlassian_jira_update_issue`:
     remove `bot-ready-for-review`, add `bot-review-complete`
   - Add Jira comment: "PR was already merged before agent review.
     Marking as review-complete for post-merge tracking."
 - **Permanent failure** (PR not found, PR closed, no PR URL in ticket):
-  - Atomic label swap using `mcp__atlassian__editJiraIssue`:
+  - Atomic label swap using `atlassian_jira_update_issue`:
     remove `bot-ready-for-review`, add `bot-fix-failed`
   - Add Jira comment explaining the failure, including:
     "To retry with a fresh fix attempt, add the `bot-retry` label."

@@ -56,10 +56,10 @@ move to the next phase.
 
 ## Label Swap Protocol
 
-All label swaps use `mcp__atlassian__editJiraIssue` with both `remove` and
+All label swaps use `atlassian_jira_update_issue` with both `remove` and
 `add` in a single API call. After every label swap, verify the result:
 
-1. Re-fetch the ticket via `mcp__atlassian__getJiraIssue`
+1. Re-fetch the ticket via `atlassian_jira_get_issue`
 2. Verify the old label is absent AND the new label is present
 3. If inconsistent (old still present, or new missing):
    - Retry the swap once (wait 2 seconds before retry)
@@ -79,7 +79,7 @@ This protocol applies to all label swaps in Phases 1-8.
 JQL: labels = autofix AND labels NOT IN (bot-in-progress, bot-ready-for-review, bot-review-complete, bot-review-fix, bot-merged, bot-fix-failed, bot-missing-info, no-autofix, bot-cancelled) AND project IN (<WATCHED_PROJECTS>)
 ```
 
-Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
+Use `atlassian_jira_search` with the JQL above.
 
 ### For each ticket:
 
@@ -114,7 +114,7 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    - Skip this ticket.
 
 3. **If Repository URL missing** (not found in description or comments):
-   - Add `bot-missing-info` label using `mcp__atlassian__editJiraIssue`
+   - Add `bot-missing-info` label using `atlassian_jira_update_issue`
      (prevents re-picking this ticket on subsequent cycles)
    - Add Jira comment:
      ```
@@ -142,20 +142,20 @@ Use `mcp__atlassian__searchJiraIssuesUsingJql` with the JQL above.
    - Count active fix sessions (label `type=issue-fix` in non-terminal phases)
    - If at `MAX_CONCURRENT_FIX_SESSIONS`, skip remaining tickets.
 
-6. **Add `bot-in-progress` label** using `mcp__atlassian__editJiraIssue`
+6. **Add `bot-in-progress` label** using `atlassian_jira_update_issue`
    (state guard — do this BEFORE creating session)
 
 7. **Assign bot service account** to the ticket
 
 8. **Attempt Jira status transition** to "In Progress":
-   - Use `mcp__atlassian__transitionJiraIssue` if available
+   - Use `atlassian_jira_transition_issue` if available
    - If transition fails due to missing gate fields (Sprint, Story Points, etc.),
      skip the transition and proceed with label-only tracking
    - Add Jira comment noting if transition was skipped
 
 9. **Create fix session** via Ambient `create_session` MCP.
    **If session creation fails:** immediately remove `bot-in-progress`
-   label via `mcp__atlassian__editJiraIssue` (rollback step 5) and add
+   label via `atlassian_jira_update_issue` (rollback step 5) and add
    a Jira comment: "Session creation failed — ticket returned to queue."
    Then skip to the next ticket.
 
@@ -227,7 +227,7 @@ JQL: labels = bot-review-fix AND labels NOT IN (bot-ready-for-review, bot-fix-fa
 1. **Check review-fix cycle count**:
    - Count Jira comments with `## Review-Fix Cycle` prefix
    - If count >= `REVIEW_FIX_MAX_CYCLES` (default 3):
-     - Atomic swap using `mcp__atlassian__editJiraIssue`:
+     - Atomic swap using `atlassian_jira_update_issue`:
        `bot-review-fix` → `bot-fix-failed`
      - Add comment: "Max review cycles exceeded — needs human attention.
        To retry the entire fix from scratch, add the `bot-retry` label."

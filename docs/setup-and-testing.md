@@ -1,11 +1,9 @@
 # Setup & Testing Guide
 
-> **Note:** This guide targets the Ambient Platform deployment. The system
-> is migrating to OpenCode + OpenShell — see
-> `docs/plan-opencode-openshell-migration.md` for the new setup.
-> The test scenarios (Parts 4, 7, 8) test Jira/GitHub behavior and remain
-> valid regardless of runtime. Parts 1-3 (prerequisites, MCP inventory,
-> Ambient config) need rewriting for the OpenCode stack.
+> **Runtime:** OpenCode + OpenShell. See `docs/plan-opencode-openshell-migration.md`
+> for the full migration plan. Parts 1-3 below have been updated for the
+> OpenCode stack. Test scenarios (Parts 4, 7, 8) test Jira/GitHub behavior
+> and remain valid regardless of runtime.
 
 Step-by-step guide to configure and test the Issue Fix Agent system.
 
@@ -16,7 +14,7 @@ Step-by-step guide to configure and test the Issue Fix Agent system.
 | Jira Site | `stage-redhat.atlassian.net` |
 | Jira Project | `OBSINTA` |
 | Test Repo | `https://github.com/rajusem/multicluster-observability-operator` |
-| Platform | Ambient Platform (access + project ready) |
+| Platform | OpenCode + OpenShell on OpenShift |
 
 ---
 
@@ -30,7 +28,7 @@ a fallback. Get your Jira API token:
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click "Create API token"
 3. Name: `issue-fix-agent`
-4. Copy the token — you'll set it as `JIRA_API_TOKEN` in Ambient
+4. Copy the token — set as `JIRA_API_TOKEN` environment variable
 
 Your `JIRA_USERNAME` is your Atlassian email address.
 
@@ -40,7 +38,7 @@ Option A — Personal Access Token (for testing):
 1. Go to https://github.com/settings/tokens
 2. "Generate new token (classic)"
 3. Scopes: `repo` (full), `workflow`
-4. Copy token — set as `GITHUB_TOKEN` in Ambient
+4. Copy token — set as `GITHUB_TOKEN` environment variable
 
 Option B — GitHub App (for production):
 1. Create GitHub App with permissions: `contents: write`, `pull-requests: write`, `metadata: read`
@@ -56,19 +54,16 @@ Option B — GitHub App (for production):
 
 ### 1.4 Verify MCP-Atlassian Access
 
-Before anything else, verify you can access Jira from an Ambient session.
-Create a quick test session in Ambient and run:
+Before anything else, verify you can access Jira from OpenCode:
 
-```
-Use mcp__atlassian__searchJiraIssuesUsingJql to search:
-JQL: project = OBSINTA AND type = Bug ORDER BY created DESC
-Return first 3 results.
+```bash
+opencode run "Use atlassian_jira_search to search: JQL: project = OBSINTA AND type = Bug ORDER BY created DESC. Return first 3 results."
 ```
 
 **Expected**: Returns Jira issues from OBSINTA project.
 
-If this fails, check your Ambient project's MCP server configuration for
-`mcp-atlassian`.
+If this fails, check `opencode.json` MCP configuration and ensure
+`JIRA_USERNAME` / `JIRA_API_TOKEN` are set in the environment.
 
 ---
 
@@ -79,11 +74,11 @@ which Jira operations are available via MCP before testing workflows.
 
 ### 2.1 Test Each MCP Operation
 
-Create an Ambient session and test each operation. Record which ones work.
+Run OpenCode and test each operation. Record which ones work.
 
 #### Test 1: Search Issues (JQL)
 ```
-Use mcp__atlassian__searchJiraIssuesUsingJql:
+Use atlassian_jira_search:
   JQL: project = OBSINTA ORDER BY created DESC
   maxResults: 3
 ```
@@ -91,22 +86,22 @@ Expected: Returns issue list. Record the key of the first issue for tests below.
 
 #### Test 2: Get Issue Details
 ```
-Use mcp__atlassian__getJiraIssue:
+Use atlassian_jira_get_issue:
   issueIdOrKey: <issue-key-from-test-1>
 ```
 Expected: Returns full issue details (summary, description, labels, status).
 
 #### Test 3: Add Label
 ```
-Use mcp__atlassian__editJiraIssue (or equivalent):
+Use atlassian_jira_update_issue (or equivalent):
   issueIdOrKey: <issue-key>
   Add label: "test-bot-label"
 ```
 Expected: Label added. Verify in Jira UI.
 
 **If this tool doesn't exist**, try:
-- `mcp__atlassian__updateJiraIssue`
-- `mcp__atlassian__updateIssue`
+- `atlassian_jira_update_issue`
+- `atlassian_jira_update_issue`
 - Direct REST API fallback (see below)
 
 Record the actual tool name that works: `________________`
@@ -120,7 +115,7 @@ Expected: Label removed.
 
 #### Test 5: Add Comment
 ```
-Use mcp__atlassian__addCommentToJiraIssue (or equivalent):
+Use atlassian_jira_add_comment (or equivalent):
   issueIdOrKey: <issue-key>
   body: "Test comment from issue-fix-agent setup"
 ```
@@ -130,14 +125,14 @@ Record the actual tool name: `________________`
 
 #### Test 6: Get Transitions
 ```
-Use mcp__atlassian__getTransitionsForJiraIssue:
+Use atlassian_jira_get_transitions:
   issueIdOrKey: <issue-key>
 ```
 Expected: Returns available transitions (e.g., "In Progress", "Done").
 
 #### Test 7: Transition Issue
 ```
-Use mcp__atlassian__transitionJiraIssue:
+Use atlassian_jira_transition_issue:
   issueIdOrKey: <issue-key>
   transitionId: <id-from-test-6>
 ```
@@ -169,39 +164,38 @@ Fill in after testing:
 
 | Operation | MCP Tool Name | Works? | Fallback Needed? |
 |-----------|--------------|--------|-----------------|
-| JQL Search | `mcp__atlassian__searchJiraIssuesUsingJql` | | |
-| Get Issue | `mcp__atlassian__getJiraIssue` | | |
+| JQL Search | `atlassian_jira_search` | | |
+| Get Issue | `atlassian_jira_get_issue` | | |
 | Add/Remove Labels | | | |
 | Add Comment | | | |
-| Get Transitions | `mcp__atlassian__getTransitionsForJiraIssue` | | |
-| Transition Issue | `mcp__atlassian__transitionJiraIssue` | | |
+| Get Transitions | `atlassian_jira_get_transitions` | | |
+| Transition Issue | `atlassian_jira_transition_issue` | | |
 
 **If any tool names differ from what's in the skill files**, update the
 skill files before proceeding to testing.
 
 ---
 
-## Part 3: Ambient Project Configuration
+## Part 3: OpenCode Project Configuration
 
 ### 3.1 Environment Variables
 
-Set these in your Ambient ProjectSettings CR or per-session:
+Set these in the shell or via OpenShell `--env`:
 
-```yaml
-environmentVariables:
-  JIRA_SITE: "stage-redhat.atlassian.net"
-  GITHUB_TOKEN: "<your-github-token>"
-  JIRA_USERNAME: "<your-atlassian-email>"
-  JIRA_API_TOKEN: "<your-jira-api-token>"
-  SLACK_WEBHOOK_URL: "<your-slack-webhook>"  # optional
+```bash
+export JIRA_SITE="stage-redhat.atlassian.net"
+export GITHUB_TOKEN="<your-github-token>"
+export JIRA_USERNAME="<your-atlassian-email>"
+export JIRA_API_TOKEN="<your-jira-api-token>"
+export ANTHROPIC_API_KEY="<your-anthropic-key>"
+export SLACK_WEBHOOK_URL="<your-slack-webhook>"  # optional
 ```
 
 ### 3.2 MCP Servers
 
-Ensure these MCP servers are configured in your Ambient project:
+Configured in `opencode.json`:
 
-- `mcp-atlassian` — for Jira operations
-- `session` — for spawning child sessions (built-in to Ambient)
+- `atlassian` — mcp-atlassian for Jira operations (auto-started via `uvx`)
 
 ### 3.3 Update Config Files
 
@@ -253,28 +247,15 @@ actually dispatching sessions.
      ```
    - Labels: `autofix`
 
-2. Create an Ambient session manually with this prompt:
-   ```
-   You are testing the jira-watcher skill in DRY RUN mode.
-
-   Read the jira-watcher skill from workflows/jira-watcher/skills/jira-watcher.md.
-   Execute ONLY Phase 1 (New Autofix Tickets) but DO NOT create any
-   child sessions and DO NOT add any labels to tickets.
-
-   Instead, for each ticket found, report:
-   - Ticket key and summary
-   - Whether Repository URL was found
-   - Whether the ticket would pass pre-screening
-   - What session would be created (name, model, repos)
-
-   Use project OBSINTA on stage-redhat.atlassian.net.
-   ```
-
-3. Point the session to this repo for workflow files:
-   ```json
-   {
-     "repos": [{"url": "https://github.com/<your-fork>/issue-fix-agent"}]
-   }
+2. Run OpenCode in dry-run mode:
+   ```bash
+   opencode run "You are testing the jira-watcher in DRY RUN mode. \
+     Read docs/reference/jira-watcher-spec.md. \
+     Execute ONLY Phase 1 (New Autofix Tickets) but DO NOT create any \
+     child sessions and DO NOT add any labels to tickets. \
+     For each ticket found, report: ticket key, summary, whether repo URL \
+     was found, whether it would pass pre-screening, what agent would be dispatched. \
+     Use project OBSINTA on stage-redhat.atlassian.net."
    ```
 
 **Expected**: The watcher finds your test ticket, reports it would pass
@@ -310,28 +291,12 @@ pre-screening, and shows the session it would create. No labels changed.
 **Steps**:
 1. Use the test ticket from Test 1 (with repo URL in description)
 2. Manually add `bot-in-progress` label to the ticket
-3. Create an Ambient session with this prompt:
-   ```
-   You are the issue-fix agent for Jira ticket OBSINTA-<NUMBER>.
-   Follow the issue-fix skill in workflows/issue-fix/skills/issue-fix.md.
-
-   Jira Site: stage-redhat.atlassian.net
-   Ticket: OBSINTA-<NUMBER>
-   Repository: https://github.com/rajusem/multicluster-observability-operator
-   Branch: main
-   Commit: none
-   Skill URL: none
-   Skill URL Allowlist: (none configured)
-   ```
-
-4. Session config:
-   ```json
-   {
-     "repos": [
-       {"url": "https://github.com/rajusem/multicluster-observability-operator", "branch": "main", "autoPush": true}
-     ],
-     "model": "claude-opus-4-6"
-   }
+3. Run the fix agent:
+   ```bash
+   opencode run --agent fix "Fix Jira ticket OBSINTA-<NUMBER>. \
+     Jira Site: stage-redhat.atlassian.net \
+     Repository: https://github.com/rajusem/multicluster-observability-operator \
+     Branch: main"
    ```
 
 **Expected** (depends on ticket content):
@@ -358,23 +323,10 @@ pre-screening, and shows the session it would create. No labels changed.
 
 **Steps**:
 1. Verify the ticket has `bot-ready-for-review` label
-2. Create an Ambient session:
-   ```
-   You are the issue-review agent for Jira ticket OBSINTA-<NUMBER>.
-   Follow the issue-review skill in workflows/issue-review/skills/issue-review.md.
-
-   Jira Site: stage-redhat.atlassian.net
-   Ticket: OBSINTA-<NUMBER>
-   ```
-
-3. Session config:
-   ```json
-   {
-     "repos": [
-       {"url": "https://github.com/rajusem/multicluster-observability-operator", "branch": "main"}
-     ],
-     "model": "claude-sonnet-4-6"
-   }
+2. Run the review agent:
+   ```bash
+   opencode run --agent review "Review PR for Jira ticket OBSINTA-<NUMBER>. \
+     Jira Site: stage-redhat.atlassian.net"
    ```
 
 **Expected**:
@@ -396,25 +348,11 @@ pre-screening, and shows the session it would create. No labels changed.
 **Prerequisite**: Test 4 set `bot-review-fix` label.
 
 **Steps**:
-1. Create an Ambient session:
-   ```
-   You are the review-fix agent for Jira ticket OBSINTA-<NUMBER>.
-   Follow the review-fix skill in workflows/review-fix/skills/review-fix.md.
-   This is cycle 1.
-
-   Jira Site: stage-redhat.atlassian.net
-   Ticket: OBSINTA-<NUMBER>
-   ```
-
-2. Session config:
-   ```json
-   {
-     "repos": [
-       {"url": "https://github.com/rajusem/multicluster-observability-operator",
-        "branch": "<pr-branch-name>", "autoPush": true}
-     ],
-     "model": "claude-opus-4-6"
-   }
+1. Run the review-fix agent:
+   ```bash
+   opencode run --agent review-fix "Address review findings for \
+     Jira ticket OBSINTA-<NUMBER>. This is cycle 1. \
+     Jira Site: stage-redhat.atlassian.net"
    ```
 
 **Expected**:
@@ -471,20 +409,13 @@ pre-screening, and shows the session it would create. No labels changed.
 | Problem | Check | Fix |
 |---------|-------|-----|
 | Watcher finds no tickets | JQL query correct? Project key matches? | Verify labels on ticket, check `watched_projects` in config |
-| MCP tool not found | Tool name correct? | Run `mcp__atlassian__` prefix and check available tools |
+| MCP tool not found | Tool name correct? | Run `atlassian_jira_` prefix and check available tools |
 | Label update fails | MCP supports label ops? | Switch to curl fallback (see skill files for syntax) |
 | Fix agent can't clone repo | GITHUB_TOKEN set? Repo accessible? | Check token scopes, repo visibility |
 | PR creation fails | `gh` CLI authenticated? | Run `gh auth status` in session |
 | Jira transition fails | Gate fields missing? | Expected — skill skips transition gracefully |
 | Session times out | TTL too short? | Increase in `config.env` |
 | Comment spamming | `bot-missing-info` label not added? | Check JQL exclusion list |
-
-### Checking Session Logs
-
-In Ambient, view session logs at:
-```
-<AMBIENT_URL>/projects/<PROJECT>/sessions/<SESSION-NAME>
-```
 
 ### Cleanup After Testing
 
@@ -493,7 +424,6 @@ In Ambient, view session logs at:
    - Remove `autofix` if no longer needed
 2. Close test PRs on GitHub
 3. Delete test branches: `git push origin --delete <branch>`
-4. Stop any running Ambient sessions
 
 ---
 
@@ -507,7 +437,7 @@ Before running on real tickets:
 - [ ] `allowed_repo_hosts` configured in `config/projects.json` (required)
 - [ ] GitHub App configured (not PAT) for production repos
 - [ ] Slack webhook configured for notifications
-- [ ] Ambient cron schedule set up for watcher (recommended: every 20 min)
+- [ ] Watcher cron schedule configured (recommended: every 20 min)
 - [ ] Team briefed on label conventions (`autofix`, `bot-*`, `no-autofix`, `bot-retry`, `bot-cancelled`)
 - [ ] Jira ticket template shared with team (Agent Configuration section)
 - [ ] Concurrency limits reviewed in `config.env` (MAX_CONCURRENT_FIX_SESSIONS=4)

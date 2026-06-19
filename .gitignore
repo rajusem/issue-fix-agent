@@ -2,3 +2,8 @@
 .env.*
 *.pem
 *.key
+
+# OpenCode runtime artifacts
+.opencode/sessions/
+.opencode/cache/
+.opencode/.state

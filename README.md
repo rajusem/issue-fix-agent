@@ -1,15 +1,12 @@
 # Issue Fix Agent
-   
-   > **Status:** The legacy implementation in this repository uses Ambient workflow
-   > files under `workflows/`, but the target runtime direction is now
-   > OpenCode + OpenShell. For the target-state architecture and migration plan,
-   > start with:
-   > - `docs/Architecture.md`
-   > - `docs/plan-opencode-openshell-migration.md`
-   >
-   > The README sections below primarily describe the current Ambient-era layout.
-   
-   An automated issue-fixing system that watches Jira tickets and dispatches AI agents to fix bugs, review code, and manage the full lifecycle from ticket to merged PR.
+
+An automated issue-fixing system that watches Jira tickets labeled `autofix`
+and dispatches AI agents to fix bugs, review code, and manage the full
+lifecycle from ticket to merged PR.
+
+> **Runtime:** OpenCode + OpenShell (migrated from Ambient Platform).
+> See `docs/Architecture.md` and `docs/plan-opencode-openshell-migration.md`
+> for the full design.
 
 ## How It Works
 
@@ -66,44 +63,52 @@ compatibility.
 ## Project Structure
 
 ```
-workflows/
-├── jira-watcher/     # Cron-spawned poller and orchestrator
-├── issue-fix/        # Bug investigation and fix agent
-├── issue-review/     # Code review agent (3-lens, no-approve)
-└── review-fix/       # Address review findings agent
+.opencode/
+├── agents/           # Agent definitions (fix, review, review-fix, 3 audit)
+├── skills/           # Skill files (issue-fix, issue-review, review-fix)
+└── plugins/          # Safety hooks (block-destructive.js)
 config/
 ├── config.env        # Models, TTLs, concurrency limits
 └── projects.json     # Watched projects, skill URL allowlist
+docs/
+├── Architecture.md   # System design and deployment
+├── reference/        # Watcher spec (Phase 2 input)
+└── ...               # Analysis, plans, testing
+opencode.json         # OpenCode config — MCP servers, instructions
+AGENTS.md             # Project rules loaded into agent context
 ```
 
-## Legacy Ambient Setup
-   
-   The steps below document the original Ambient-based workflow layout kept in
-   this repository for reference during migration.
-   
-   ### Prerequisites
+## Setup
 
-- Ambient Platform access with a project configured
-- `mcp-atlassian` MCP server configured for Jira access
-- `session` MCP server (built-in Ambient) for spawning child sessions
-- GitHub token with `contents: write` and `pull-requests: write` permissions
+### Prerequisites
+
+- OpenCode v1.17.5+
+- `mcp-atlassian` MCP server (`uvx mcp-atlassian`)
+- `gh` CLI with `contents:write` and `pull-requests:write` permissions
+- `git` CLI
 
 ### Configuration
 
 1. Edit `config/projects.json` — set your Jira project keys and skill URL patterns
-2. Edit `config/config.env` — set your Jira site, models, TTLs
-3. Configure Ambient environment variables:
-   - `JIRA_SITE` — Your Atlassian cloud instance
+2. Edit `config/config.env` — set models, TTLs, concurrency limits
+3. Set environment variables:
+   - `JIRA_USERNAME` / `JIRA_API_TOKEN` — Jira credentials
    - `GITHUB_TOKEN` — GitHub App token (preferred) or PAT
-   - `SLACK_WEBHOOK_URL` — For notifications (optional)
+   - `ANTHROPIC_API_KEY` — For OpenCode agent dispatch
 
 ### Running
 
-Create a watcher session in Ambient pointing to the `workflows/jira-watcher/` workflow. Set it on a cron schedule (recommended: every 20 minutes).
+```bash
+# Verify OpenCode can start in this project
+opencode run "What skills are available?"
+
+# Run the fix agent against a ticket (Phase 2 watcher will automate this)
+opencode run --agent fix "Fix Jira ticket OBSINTA-123"
+```
 
 ## Adapted From
 
-This project adapts skills from the [AAP SDLC Harness](https://gitlab.cee.redhat.com/aap-sdlc/harness) for unattended Ambient Platform operation:
+This project adapts skills from the [AAP SDLC Harness](https://gitlab.cee.redhat.com/aap-sdlc/harness):
 
 - `bugfix-workflow` → `issue-fix`
 - `code-review` + `review-pr-workflow` → `issue-review`

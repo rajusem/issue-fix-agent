@@ -211,7 +211,7 @@ verifies their email matches `@redhat.com`.
 **Implementation plan:**
 1. In the watcher's Phase 1, after finding a ticket with `autofix` label:
    a. Fetch the ticket's changelog (may need Jira REST API — check if
-      `mcp__atlassian__getJiraIssue` returns changelog/history)
+      `atlassian_jira_get_issue` returns changelog/history)
    b. Find the changelog entry where `autofix` label was added
    c. Verify the author's email matches `comment_domain_filter`
    d. If verification fails or changelog is inaccessible:
@@ -1011,7 +1011,7 @@ Jira credentials, Vertex auth.
    git config --global credential.helper || echo "WARNING: no credential helper"
 
    # Check MCP tools available
-   # (verify mcp__atlassian__getJiraIssue works with a test call)
+   # (verify atlassian_jira_get_issue works with a test call)
 
    # Check required binaries
    which git gh || { echo "ERROR: required tools missing"; exit 1; }

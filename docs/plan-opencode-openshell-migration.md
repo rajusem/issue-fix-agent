@@ -190,7 +190,7 @@ Before starting Phase 1:
 | `config/projects.json` | `opencode.json` (custom config) or skill config | Allowlists, project settings |
 | `workflows/*/ambient.json` (4 files) | Not needed | Metadata (name, description, version) moves to agent definitions |
 | Watcher (Ambient session) | External orchestrator (cron + OpenCode CLI) | See below |
-| `mcp__atlassian__*` | MCP server in `opencode.json` | Tool names may differ — must validate |
+| `atlassian_jira_*` | MCP server in `opencode.json` | Tool names may differ — must validate |
 | Ambient `create_session` MCP | External orchestrator + `openshell sandbox create -- opencode` | Sandbox creation replaces Ambient session dispatch |
 | Session TTL | OpenShell sandbox timeout | Policy-level enforcement |
 | Repo auto-clone (`repos` field) | `git clone` in sandbox or OpenCode workspace | Manual or scripted |
@@ -267,7 +267,7 @@ OpenShell `--env`. This format is identical to the example in
 Architecture.md.
 
 OpenCode manages MCP servers natively — it starts them on demand, routes
-tool calls, and handles auth. The `mcp__atlassian__*` tool names may
+tool calls, and handles auth. The `atlassian_jira_*` tool names may
 differ slightly but the functionality is the same.
 
 ### 4. Security Rules

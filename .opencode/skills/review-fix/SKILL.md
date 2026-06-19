@@ -3,8 +3,6 @@ name: review-fix
 description: "Addresses code review findings from the issue-review agent.
   Reads PR review comments, implements fixes, pushes to same branch,
   and sends back for re-review. Max 3 cycles."
-version: "1.1.0"
-type: workflow
 ---
 
 # Review-Fix Skill
@@ -21,9 +19,9 @@ finding, and pushes fixes to the same PR branch. No human confirmation.
 
 ## MCP Tools Available
 
-- `mcp__atlassian__getJiraIssue` — fetch Jira ticket details
-- `mcp__atlassian__editJiraIssue` — update labels (use for label swaps)
-- `mcp__atlassian__addCommentToJiraIssue` — add comments
+- `atlassian_jira_get_issue` — fetch Jira ticket details
+- `atlassian_jira_update_issue` — update labels (use for label swaps)
+- `atlassian_jira_add_comment` — add comments
 
 After every label swap via `editJiraIssue`, re-fetch the ticket to verify
 the expected labels are present. If inconsistent, retry once before
@@ -31,11 +29,11 @@ following Failure Protocol. If the verification re-fetch itself fails
 (network/timeout error), log a warning and continue — do not trigger
 Failure Protocol for a transient verification failure.
 
-## Ambient Workspace
+## Workspace
 
 The session may be created with a `repos` field that auto-clones the repo.
 If the repo is already in the workspace, use `gh pr checkout` to switch to
-the PR branch. The environment variable `$AGENTIC_SESSION_NAME` contains the
+the PR branch. The environment variable `$OPENCODE_SESSION_ID` contains the
 session identifier.
 
 ## Phase 0: Environment Validation
@@ -58,7 +56,7 @@ Run before any Jira operations. If any check fails, exit with
 
 Verify before starting — if any gate fails, follow the Failure Protocol.
 
-1. **Jira ticket accessible** — fetch via `mcp__atlassian__getJiraIssue`
+1. **Jira ticket accessible** — fetch via `atlassian_jira_get_issue`
 2. **`bot-review-fix` label present** — confirms proper dispatch
 3. **PR exists and is open** — not merged, not closed
 4. **PR repo URL valid** — the repo URL extracted from the PR must start
@@ -73,11 +71,11 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
    ```bash
    START_TIME=$(date +%s)
    ```
-2. Read Jira ticket via `mcp__atlassian__getJiraIssue`:
+2. Read Jira ticket via `atlassian_jira_get_issue`:
    - Find the PR URL from ticket comments
    - Count existing `## Review-Fix Cycle` comments to determine cycle N
 3. **Check cycle count** — if N >= 3:
-   - Atomic label swap using `mcp__atlassian__editJiraIssue`:
+   - Atomic label swap using `atlassian_jira_update_issue`:
      `bot-review-fix` → `bot-fix-failed`
    - Add Jira comment: "Max review cycles (3) exceeded — needs human attention."
    - Exit immediately.
@@ -97,7 +95,7 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 ## Phase 3: Clone and Checkout
 
-1. Check if repo is already cloned (Ambient may auto-clone).
+1. Check if repo is already cloned (platform may auto-clone).
    If not cloned, clone first with protocol restrictions:
    ```bash
    git -c protocol.ext.allow=never -c protocol.file.allow=never \
@@ -196,9 +194,9 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    ```bash
    git push
    ```
-2. Atomic label swap using `mcp__atlassian__editJiraIssue`:
+2. Atomic label swap using `atlassian_jira_update_issue`:
    `bot-review-fix` → `bot-ready-for-review`
-3. Add Jira comment via `mcp__atlassian__addCommentToJiraIssue`:
+3. Add Jira comment via `atlassian_jira_add_comment`:
    ```
    ## Review-Fix Cycle N/3
    **Findings Addressed**: X of Y
@@ -235,7 +233,7 @@ follow the Failure Protocol.
 
 If findings cannot be addressed or tests fail persistently:
 
-1. Atomic label swap using `mcp__atlassian__editJiraIssue`:
+1. Atomic label swap using `atlassian_jira_update_issue`:
    `bot-review-fix` → `bot-fix-failed`
 2. Add Jira comment:
    ```
