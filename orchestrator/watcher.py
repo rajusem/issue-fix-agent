@@ -18,11 +18,11 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import quote
 
 from .config import Config, load_config, validate_config
 from .dispatcher import Dispatcher
@@ -92,6 +92,12 @@ def run_cycle(config: Config) -> CycleStats:
     phases = [
         ("Phase 1: New tickets", phase_new_tickets),
         ("Phase 1B: Plan approval", phase_plan_approval),
+        ("Phase 2: Review dispatch", phase_review_dispatch),
+        ("Phase 3: Review-fix dispatch", phase_review_fix_dispatch),
+        ("Phase 4: Post-merge updates", phase_post_merge),
+        ("Phase 5: Cancellation", phase_cancellation),
+        ("Phase 7: Missing info re-check", phase_missing_info),
+        ("Phase 8: Retry", phase_retry),
         ("Phase 9: Plan timeout", phase_plan_timeout),
     ]
 
@@ -259,9 +265,390 @@ def phase_plan_timeout(
             stats.stale_plans += 1
 
 
+def phase_review_dispatch(
+    jira: JiraClient, dispatcher: Dispatcher, config: Config, stats: CycleStats
+):
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = bot-ready-for-review "
+        f"AND labels NOT IN (bot-review-complete, bot-review-fix) "
+        f"AND project IN ({projects})"
+    )
+    issues = jira.search(jql)
+    log.info("Phase 2: Found %d tickets ready for review", len(issues))
+
+    for issue in issues:
+        ticket = jira.parse_ticket(issue)
+        if ticket is None:
+            continue
+
+        active = _active_review_count(jira, config)
+        if active >= config.max_concurrent_review:
+            log.info("Review concurrency limit reached (%d/%d)",
+                     active, config.max_concurrent_review)
+            break
+
+        if dispatcher.is_tracked(ticket.key):
+            continue
+
+        comments = jira.get_comments(ticket.key)
+        pr_info = _extract_pr_info(comments)
+        if not pr_info:
+            log.warning("%s: Could not extract PR info from comments", ticket.key)
+            continue
+
+        jira.add_comment(
+            ticket.key,
+            f"## Agent Session Started\n"
+            f"**Agent**: review\n"
+            f"**Started**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"**Phase**: Code review",
+        )
+
+        prompt = (
+            f"Review the PR for Jira ticket {ticket.key}. "
+            f"Follow the issue-review skill. "
+            f"Jira Site: {config.jira_site}"
+        )
+        dispatcher.dispatch(ticket.key, "review", prompt, config.review_ttl)
+        stats.reviews_dispatched += 1
+
+
+def phase_review_fix_dispatch(
+    jira: JiraClient, dispatcher: Dispatcher, config: Config, stats: CycleStats
+):
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = bot-review-fix "
+        f"AND labels NOT IN (bot-ready-for-review, bot-fix-failed) "
+        f"AND project IN ({projects})"
+    )
+    issues = jira.search(jql)
+    log.info("Phase 3: Found %d tickets needing review-fix", len(issues))
+
+    for issue in issues:
+        ticket = jira.parse_ticket(issue)
+        if ticket is None:
+            continue
+
+        comments = jira.get_comments(ticket.key)
+        cycle_count = _count_review_fix_cycles(comments)
+
+        if cycle_count >= config.review_fix_max_cycles:
+            log.info("%s: Max review-fix cycles reached (%d/%d)",
+                     ticket.key, cycle_count, config.review_fix_max_cycles)
+            jira.swap_labels(
+                ticket.key,
+                remove=["bot-review-fix"],
+                add=["bot-fix-failed"],
+            )
+            jira.add_comment(
+                ticket.key,
+                f"Max review cycles ({config.review_fix_max_cycles}) exceeded "
+                f"— needs human attention.\n"
+                f"To retry the entire fix from scratch, add the `bot-retry` label.",
+            )
+            continue
+
+        active = _active_review_fix_count(jira, config)
+        if active >= config.max_concurrent_review_fix:
+            log.info("Review-fix concurrency limit reached (%d/%d)",
+                     active, config.max_concurrent_review_fix)
+            break
+
+        if dispatcher.is_tracked(ticket.key):
+            continue
+
+        next_cycle = cycle_count + 1
+        jira.add_comment(
+            ticket.key,
+            f"## Agent Session Started\n"
+            f"**Agent**: review-fix\n"
+            f"**Started**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"**Phase**: Review-fix cycle {next_cycle}",
+        )
+
+        prompt = (
+            f"Address review findings for Jira ticket {ticket.key}. "
+            f"Follow the review-fix skill. This is cycle {next_cycle}. "
+            f"Jira Site: {config.jira_site}"
+        )
+        dispatcher.dispatch(
+            ticket.key, "review-fix", prompt, config.review_fix_ttl
+        )
+        stats.review_fixes_dispatched += 1
+
+
+def phase_post_merge(
+    jira: JiraClient, dispatcher: Dispatcher, config: Config, stats: CycleStats
+):
+    projects = ",".join(config.watched_projects)
+    jql = f"labels = bot-review-complete AND project IN ({projects})"
+    issues = jira.search(jql)
+    log.info("Phase 4: Checking %d tickets for merged PRs", len(issues))
+
+    for issue in issues:
+        ticket = jira.parse_ticket(issue)
+        if ticket is None:
+            continue
+
+        comments = jira.get_comments(ticket.key)
+        pr_info = _extract_pr_info(comments)
+        if not pr_info:
+            log.warning("%s: No PR info found in comments", ticket.key)
+            continue
+
+        repo, pr_number = pr_info
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", str(pr_number), "--repo", repo,
+                 "--json", "state,merged,mergedAt,mergedBy,mergeCommit"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                log.warning("%s: gh pr view failed: %s", ticket.key, result.stderr)
+                continue
+            pr_data = json.loads(result.stdout)
+        except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+            log.warning("%s: PR status check failed: %s", ticket.key, e)
+            continue
+
+        if pr_data.get("merged"):
+            merged_by = pr_data.get("mergedBy", {}).get("login", "unknown")
+            merge_commit = pr_data.get("mergeCommit", {}).get("oid", "unknown")[:12]
+            jira.swap_labels(
+                ticket.key,
+                remove=["bot-review-complete"],
+                add=["bot-merged"],
+            )
+            jira.add_comment(
+                ticket.key,
+                f"## PR Merged\n"
+                f"**PR**: #{pr_number} merged\n"
+                f"**Merge Commit**: {merge_commit}\n"
+                f"**Merged By**: @{merged_by}\n\n"
+                f"Ticket is ready for manual review and close.",
+            )
+            stats.merges_detected += 1
+
+        elif pr_data.get("state") == "CLOSED":
+            jira.swap_labels(
+                ticket.key,
+                remove=["bot-review-complete"],
+                add=["bot-fix-failed"],
+            )
+            jira.add_comment(
+                ticket.key,
+                f"## PR Closed Without Merge\n"
+                f"**PR**: #{pr_number} was closed without merging.\n\n"
+                f"The fix was rejected or abandoned. To retry with a new "
+                f"approach, add the `bot-retry` label. To opt out, add `no-autofix`.",
+            )
+            stats.closed_prs += 1
+
+
+def phase_cancellation(
+    jira: JiraClient, dispatcher: Dispatcher, config: Config, stats: CycleStats
+):
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = autofix AND labels = bot-cancelled "
+        f"AND labels NOT IN (bot-fix-failed, bot-merged) "
+        f"AND project IN ({projects})"
+    )
+    issues = jira.search(jql)
+    log.info("Phase 5: Found %d cancelled tickets", len(issues))
+
+    for issue in issues:
+        ticket = jira.parse_ticket(issue)
+        if ticket is None:
+            continue
+
+        bot_labels = [l for l in ticket.labels if l.startswith("bot-")]
+        remove_labels = [l for l in bot_labels if l != "bot-fix-failed"]
+
+        jira.swap_labels(
+            ticket.key,
+            remove=remove_labels,
+            add=["bot-fix-failed"],
+        )
+
+        has_no_autofix = "no-autofix" in ticket.labels
+        if has_no_autofix:
+            comment = (
+                "## Pipeline Cancelled\n"
+                "Cancelled by human intervention. Ticket is opted out of "
+                "automation (`no-autofix` label present)."
+            )
+        else:
+            comment = (
+                "## Pipeline Cancelled\n"
+                "Cancelled by human intervention (`bot-cancelled` label detected).\n"
+                "Active sessions have been stopped (or will expire at TTL).\n\n"
+                "To retry, add the `bot-retry` label.\n"
+                "To opt out permanently, add `no-autofix`."
+            )
+        jira.add_comment(ticket.key, comment)
+        stats.cancellations += 1
+
+
+def phase_missing_info(
+    jira: JiraClient, dispatcher: Dispatcher, config: Config, stats: CycleStats
+):
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = autofix AND labels = bot-missing-info "
+        f"AND project IN ({projects})"
+    )
+    issues = jira.search(jql, max_results=5)
+    log.info("Phase 7: Re-checking %d missing-info tickets", len(issues))
+
+    for issue in issues:
+        ticket = jira.parse_ticket(issue)
+        if ticket is None:
+            continue
+
+        if ticket.repo_url:
+            jira.swap_labels(
+                ticket.key,
+                remove=["bot-missing-info"],
+                add=[],
+            )
+            jira.add_comment(
+                ticket.key,
+                "Repository URL detected. Ticket re-queued for processing.",
+            )
+            stats.missing_info_recovered += 1
+            continue
+
+        comments = jira.get_comments(ticket.key)
+        repo_from_comments = _find_repo_in_comments(comments, config)
+        if repo_from_comments:
+            jira.swap_labels(
+                ticket.key,
+                remove=["bot-missing-info"],
+                add=[],
+            )
+            jira.add_comment(
+                ticket.key,
+                "Repository URL detected in comments. Ticket re-queued for processing.",
+            )
+            stats.missing_info_recovered += 1
+            continue
+
+        missing_info_time = _find_comment_time(comments, "## Missing Information")
+        if missing_info_time:
+            age_days = (datetime.utcnow() - missing_info_time).total_seconds() / 86400
+            if age_days > 7:
+                has_reminder = any(
+                    _get_comment_body(c).startswith("Reminder:")
+                    for c in comments
+                )
+                if not has_reminder:
+                    jira.add_comment(
+                        ticket.key,
+                        "Reminder: This ticket is still waiting for a valid "
+                        "Repository URL. Add it to the ticket description and "
+                        "the bot will detect it automatically.",
+                    )
+
+
+def phase_retry(
+    jira: JiraClient, dispatcher: Dispatcher, config: Config, stats: CycleStats
+):
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = autofix AND labels = bot-fix-failed AND labels = bot-retry "
+        f"AND project IN ({projects})"
+    )
+    issues = jira.search(jql)
+    log.info("Phase 8: Found %d retry requests", len(issues))
+
+    for issue in issues:
+        ticket = jira.parse_ticket(issue)
+        if ticket is None:
+            continue
+
+        comments = jira.get_comments(ticket.key)
+        fail_count = sum(
+            1 for c in comments
+            if _get_comment_body(c).startswith("## Fix Failed")
+        )
+        retry_count = max(0, fail_count - 1)
+
+        if retry_count >= config.max_fix_retries:
+            log.info("%s: Max retries reached (%d/%d)",
+                     ticket.key, retry_count, config.max_fix_retries)
+            jira.swap_labels(ticket.key, remove=["bot-retry"], add=[])
+            jira.add_comment(
+                ticket.key,
+                f"Maximum retries ({config.max_fix_retries}) reached. "
+                f"This ticket needs human intervention. "
+                f"Prior failures are documented in comments above.",
+            )
+            continue
+
+        if not ticket.repo_url:
+            jira.swap_labels(ticket.key, remove=["bot-retry"], add=[])
+            jira.add_comment(
+                ticket.key,
+                "Retry failed — Repository URL is missing from the ticket.",
+            )
+            continue
+
+        active = _active_fix_count(jira, config)
+        if active >= config.max_concurrent_fix:
+            log.info("Concurrency limit reached — deferring retry")
+            break
+
+        jira.swap_labels(
+            ticket.key,
+            remove=["bot-fix-failed", "bot-retry"],
+            add=["bot-in-progress"],
+        )
+        jira.add_comment(
+            ticket.key,
+            f"## Agent Session Started\n"
+            f"**Agent**: fix-investigate (retry {retry_count + 1})\n"
+            f"**Started**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"**Phase**: Investigation (retry)",
+        )
+
+        prompt = _build_investigate_prompt(ticket, config)
+        prompt += (
+            f"\n\nThis is retry {retry_count + 1}. Check prior ## Fix Failed "
+            f"comments on the Jira ticket for context on what was previously "
+            f"attempted and why it failed. Avoid repeating the same approach."
+        )
+        dispatcher.dispatch(
+            ticket.key, "fix-investigate", prompt, config.investigate_ttl
+        )
+        stats.retries_dispatched += 1
+
+
 def _active_fix_count(jira: JiraClient, config: Config) -> int:
     projects = ",".join(config.watched_projects)
     jql = f"labels = bot-in-progress AND project IN ({projects})"
+    return len(jira.search(jql))
+
+
+def _active_review_count(jira: JiraClient, config: Config) -> int:
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = bot-ready-for-review "
+        f"AND labels NOT IN (bot-review-complete, bot-review-fix, bot-fix-failed) "
+        f"AND project IN ({projects})"
+    )
+    return len(jira.search(jql))
+
+
+def _active_review_fix_count(jira: JiraClient, config: Config) -> int:
+    projects = ",".join(config.watched_projects)
+    jql = (
+        f"labels = bot-review-fix "
+        f"AND labels NOT IN (bot-ready-for-review, bot-fix-failed) "
+        f"AND project IN ({projects})"
+    )
     return len(jira.search(jql))
 
 
@@ -301,6 +688,80 @@ def _extract_fix_branch(comments: list[dict]) -> str | None:
     return None
 
 
+def _extract_pr_info(comments: list[dict]) -> tuple[str, int] | None:
+    for comment in reversed(comments):
+        body = _get_comment_body(comment)
+        if "## Fix Applied" in body:
+            match = re.search(
+                r"\[#(\d+)\]\(https://github\.com/([^/]+/[^/]+)/pull/\d+\)", body
+            )
+            if match:
+                return match.group(2), int(match.group(1))
+    return None
+
+
+def _count_review_fix_cycles(comments: list[dict]) -> int:
+    return sum(
+        1 for c in comments
+        if _get_comment_body(c).startswith("## Review-Fix Cycle")
+    )
+
+
+BOT_COMMENT_HEADERS = [
+    "## Missing Information", "## Fix Applied", "## Fix Failed",
+    "## Review-Fix Failed", "## Review-Fix Cycle",
+    "## Agent Session Started", "## PR Merged", "## Agent Code Review",
+    "## Fix Plan", "## Plan Compliance Failed", "## Audit",
+    "## Pipeline Cancelled", "## PR Closed Without Merge",
+    "## Plan Approval Timeout",
+]
+
+
+def _find_repo_in_comments(comments: list[dict], config) -> str | None:
+    from .jira_client import _extract_field
+    for comment in comments:
+        body = _get_comment_body(comment)
+        if any(body.startswith(h) for h in BOT_COMMENT_HEADERS):
+            continue
+        repo = _extract_field(body, "Repository")
+        if repo and repo.startswith("https://"):
+            from urllib.parse import urlparse
+            host = urlparse(repo).hostname or ""
+            if host in config.allowed_repo_hosts:
+                return repo
+        url_match = re.search(r"https://github\.com/[^\s)]+", body)
+        if url_match:
+            url = url_match.group(0)
+            from urllib.parse import urlparse
+            host = urlparse(url).hostname or ""
+            if host in config.allowed_repo_hosts:
+                return url
+    return None
+
+
+def _find_comment_time(comments: list[dict], header: str) -> datetime | None:
+    for comment in comments:
+        body = _get_comment_body(comment)
+        if body.startswith(header):
+            created = comment.get("created", "")
+            if created:
+                try:
+                    return datetime.fromisoformat(
+                        created.replace("Z", "+00:00")
+                    ).replace(tzinfo=None)
+                except ValueError:
+                    pass
+    return None
+
+
+def _get_comment_body(comment: dict) -> str:
+    body = comment.get("body", "")
+    if isinstance(body, dict):
+        from .jira_client import adf_to_text
+        return adf_to_text(body)
+    return body
+
+
 def _find_plan_comment_time(comments: list[dict]) -> datetime | None:
     for comment in reversed(comments):
         body = comment.get("body", "")
@@ -320,17 +781,21 @@ def _find_plan_comment_time(comments: list[dict]) -> datetime | None:
 
 
 def _stats_summary(stats: CycleStats) -> str:
-    parts = []
-    if stats.new_tickets:
-        parts.append(f"new={stats.new_tickets}")
-    if stats.plans_dispatched:
-        parts.append(f"plans_implemented={stats.plans_dispatched}")
-    if stats.stale_plans:
-        parts.append(f"stale_plans={stats.stale_plans}")
-    if stats.skipped_concurrency:
-        parts.append(f"skipped_concurrency={stats.skipped_concurrency}")
-    if stats.errors:
-        parts.append(f"errors={len(stats.errors)}")
+    fields = [
+        ("new", stats.new_tickets),
+        ("plans", stats.plans_dispatched),
+        ("reviews", stats.reviews_dispatched),
+        ("review_fixes", stats.review_fixes_dispatched),
+        ("merges", stats.merges_detected),
+        ("closed_prs", stats.closed_prs),
+        ("cancellations", stats.cancellations),
+        ("missing_recovered", stats.missing_info_recovered),
+        ("retries", stats.retries_dispatched),
+        ("stale_plans", stats.stale_plans),
+        ("skipped", stats.skipped_concurrency),
+        ("errors", len(stats.errors)),
+    ]
+    parts = [f"{k}={v}" for k, v in fields if v]
     return ", ".join(parts) if parts else "no activity"
 
 
@@ -340,9 +805,16 @@ def post_summary(config: Config, stats: CycleStats, elapsed_seconds: int):
 
     prefix = "[DRY RUN] " if config.dry_run else ""
     text = (
-        f"{prefix}Watcher cycle complete ({elapsed_seconds}s)\n"
+        f"{prefix}Issue Fix Agent — Watcher Cycle Summary ({elapsed_seconds}s)\n"
         f"• New tickets dispatched: {stats.new_tickets}\n"
         f"• Plans implemented: {stats.plans_dispatched}\n"
+        f"• Reviews dispatched: {stats.reviews_dispatched}\n"
+        f"• Review-fixes dispatched: {stats.review_fixes_dispatched}\n"
+        f"• Retries dispatched: {stats.retries_dispatched}\n"
+        f"• Merged PRs updated: {stats.merges_detected}\n"
+        f"• Closed PRs detected: {stats.closed_prs}\n"
+        f"• Cancelled by human: {stats.cancellations}\n"
+        f"• Missing info recovered: {stats.missing_info_recovered}\n"
         f"• Stale plans timed out: {stats.stale_plans}\n"
     )
     if stats.skipped_concurrency:

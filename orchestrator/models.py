@@ -26,6 +26,13 @@ class DispatchRecord:
 class CycleStats:
     new_tickets: int = 0
     plans_dispatched: int = 0
+    reviews_dispatched: int = 0
+    review_fixes_dispatched: int = 0
+    merges_detected: int = 0
+    closed_prs: int = 0
+    cancellations: int = 0
+    missing_info_recovered: int = 0
+    retries_dispatched: int = 0
     stale_plans: int = 0
     skipped_concurrency: int = 0
     errors: list[str] = field(default_factory=list)
