@@ -8,6 +8,9 @@
 .opencode/cache/
 .opencode/.state
 
+# Local evaluation docs (not committed)
+docs/evaluation-*.md
+
 # Orchestrator runtime artifacts
 orchestrator/state/dispatch_state.json
 orchestrator/logs/
