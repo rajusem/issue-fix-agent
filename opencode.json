@@ -1,7 +1,33 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": ["AGENTS.md"],
-  "provider": {},
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "gemma4": {
+          "name": "Gemma 4 9B",
+          "contextWindow": 128000
+        },
+        "gemma4:31b": {
+          "name": "Gemma 4 31B",
+          "contextWindow": 128000
+        },
+        "qwen3-coder-fixed": {
+          "name": "Qwen3-Coder 30B",
+          "contextWindow": 32768
+        },
+        "minimax-m2.5:cloud": {
+          "name": "MiniMax M2.5 (cloud)",
+          "contextWindow": 200000
+        }
+      }
+    }
+  },
   "mcp": {
     "atlassian": {
       "type": "local",
