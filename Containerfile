@@ -2,7 +2,11 @@ FROM registry.access.redhat.com/ubi9/python-311:latest
 
 USER 0
 
-RUN dnf install -y --allowerasing git curl jq && dnf clean all
+RUN dnf install -y --allowerasing git curl jq golang && dnf clean all && \
+    curl -sL -o /tmp/rg.tar.gz "https://github.com/BurntSushi/ripgrep/releases/latest/download/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz" && \
+    tar xzf /tmp/rg.tar.gz -C /tmp && \
+    cp /tmp/ripgrep-*/rg /usr/local/bin/ && \
+    rm -rf /tmp/rg.tar.gz /tmp/ripgrep-*
 
 RUN curl -fsSL https://cli.github.com/packages/rpm/gh-cli.repo \
       > /etc/yum.repos.d/gh-cli.repo && \

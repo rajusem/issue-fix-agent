@@ -42,7 +42,8 @@ class Dispatcher:
         sandbox_name = None
 
         opencode_cmd = ["opencode", "run", "--agent", agent,
-                        "--dangerously-skip-permissions"]
+                        "--dangerously-skip-permissions",
+                        "--dir", "/tmp"]
         if model:
             opencode_cmd.extend(["-m", model])
         opencode_cmd.append(prompt)

@@ -718,7 +718,7 @@ def _extract_fix_branch(comments: list[dict]) -> str | None:
         if isinstance(body, dict):
             from .jira_client import adf_to_text
             body = adf_to_text(body)
-        if "Fix Plan" in body and "APPROVED" in body:
+        if ("Plan" in body or "plan" in body) and ("Branch" in body or "branch" in body):
             for pattern in [
                 r"\*\*Branch\*\*:\s*`?([^\s`]+)",
                 r"\*Branch\*:\s*([^\s]+)",

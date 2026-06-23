@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Grep(*)",
+      "Glob(*)",
+      "Task(*)",
+      "external_directory(/tmp/*)",
+      "external_directory(/var/*)"
+    ]
+  }
+}

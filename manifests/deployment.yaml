@@ -30,7 +30,20 @@ spec:
         - name: watcher
           image: quay.io/rzalavad/issue-fix-agent:latest
           imagePullPolicy: Always
-          command: ["python", "-m", "orchestrator.watcher", "--loop"]
+          command:
+            - bash
+            - -c
+            - |
+              ln -sf /app/opencode.json /tmp/opencode.json
+              ln -sf /app/AGENTS.md /tmp/AGENTS.md
+              mkdir -p /tmp/.opencode
+              ln -sf /app/.opencode/agents /tmp/.opencode/agents
+              ln -sf /app/.opencode/skills /tmp/.opencode/skills
+              ln -sf /app/.opencode/plugins /tmp/.opencode/plugins
+              ln -sf /app/.opencode/settings.json /tmp/.opencode/settings.json
+              ln -sf /tmp/litemaas-config/opencode.json /tmp/.opencode/opencode.json
+              echo "Symlinks ready:" && ls -la /tmp/.opencode/
+              cd /app && python -m orchestrator.watcher --loop
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -68,6 +81,10 @@ spec:
               mountPath: /app/.opencode/opencode.json
               subPath: opencode.json
               readOnly: true
+            - name: opencode-config-tmp
+              mountPath: /tmp/litemaas-config/opencode.json
+              subPath: opencode.json
+              readOnly: true
             - name: data
               mountPath: /app/orchestrator/state
               subPath: state
@@ -93,6 +110,9 @@ spec:
               - key: projects.json
                 path: projects.json
         - name: opencode-config
+          secret:
+            secretName: litemaas-config
+        - name: opencode-config-tmp
           secret:
             secretName: litemaas-config
         - name: data
