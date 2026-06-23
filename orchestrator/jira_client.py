@@ -52,12 +52,15 @@ class JiraClient:
         if self.config.dry_run:
             log.info("[DRY RUN] %s: remove %s, add %s", key, remove, add)
             return
-        update_body = {"update": {"labels": []}}
+        update_ops = []
         for label in remove:
-            update_body["update"]["labels"].append({"remove": label})
+            update_ops.append({"remove": label})
         for label in add:
-            update_body["update"]["labels"].append({"add": label})
-        self.jira.update_issue_field(key, update_body)
+            update_ops.append({"add": label})
+        self.jira.put(
+            f"rest/api/3/issue/{key}",
+            data={"update": {"labels": update_ops}},
+        )
         self._verify_labels(key, expected=add, absent=remove)
 
     def get_labels(self, key: str) -> list[str]:
@@ -173,10 +176,15 @@ def adf_to_text(node: dict) -> str:
 
 
 def _extract_field(text: str, field_name: str) -> str | None:
-    pattern = rf"\*\*{re.escape(field_name)}\*\*\s*:\s*(.+)"
-    match = re.search(pattern, text)
-    if match:
-        return match.group(1).strip()
+    escaped = re.escape(field_name)
+    for pattern in [
+        rf"\*\*{escaped}\*\*\s*:\s*(.+)",
+        rf"\*{escaped}\*\s*:\s*(.+)",
+        rf"^{escaped}\s*:\s*(.+)",
+    ]:
+        match = re.search(pattern, text, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
     return None
 
 

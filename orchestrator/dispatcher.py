@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -27,16 +28,28 @@ class Dispatcher:
         self.state = self._load_state()
 
     def dispatch(
-        self, ticket_key: str, agent: str, prompt: str, ttl_minutes: int
+        self, ticket_key: str, agent: str, prompt: str, ttl_minutes: int,
+        model: str | None = None,
     ) -> int | None:
         if self.config.dry_run:
-            log.info("[DRY RUN] Would dispatch %s for %s", agent, ticket_key)
+            log.info("[DRY RUN] Would dispatch %s for %s (model=%s)",
+                     agent, ticket_key, model or "agent-default")
             return None
 
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time())
         log_file = str(LOGS_DIR / f"{ticket_key}-{agent}-{timestamp}.log")
         sandbox_name = None
+
+        opencode_cmd = ["opencode", "run", "--agent", agent,
+                        "--dangerously-skip-permissions"]
+        if model:
+            opencode_cmd.extend(["-m", model])
+        opencode_cmd.append(prompt)
+
+        timeout_cmd = ["timeout", f"{ttl_minutes}m"]
+        if not shutil.which("timeout"):
+            timeout_cmd = []
 
         if self.config.sandbox_enabled:
             sandbox_name = f"{ticket_key}-{agent}-{uuid.uuid4().hex[:8]}".lower()
@@ -51,15 +64,10 @@ class Dispatcher:
                 "--memory", "8Gi",
                 "--env-file", env_file,
                 "--",
-                "timeout", f"{ttl_minutes}m",
-                "opencode", "run", "--agent", agent, prompt,
-            ]
+            ] + timeout_cmd + opencode_cmd
         else:
             env_file = None
-            cmd = [
-                "timeout", f"{ttl_minutes}m",
-                "opencode", "run", "--agent", agent, prompt,
-            ]
+            cmd = timeout_cmd + opencode_cmd
 
         with open(log_file, "w") as lf:
             proc = subprocess.Popen(

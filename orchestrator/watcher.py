@@ -173,7 +173,8 @@ def phase_new_tickets(
 
         prompt = _build_investigate_prompt(ticket, config)
         dispatcher.dispatch(
-            ticket.key, "fix-investigate", prompt, config.investigate_ttl
+            ticket.key, "fix-investigate", prompt, config.investigate_ttl,
+            model=config.fix_model,
         )
         stats.new_tickets += 1
 
@@ -225,7 +226,8 @@ def phase_plan_approval(
             f"Jira Site: {config.jira_site}"
         )
         dispatcher.dispatch(
-            ticket.key, "fix-implement", prompt, config.implement_ttl
+            ticket.key, "fix-implement", prompt, config.implement_ttl,
+            model=config.fix_model,
         )
         stats.plans_dispatched += 1
 
@@ -310,7 +312,8 @@ def phase_review_dispatch(
             f"Follow the issue-review skill. "
             f"Jira Site: {config.jira_site}"
         )
-        dispatcher.dispatch(ticket.key, "review", prompt, config.review_ttl)
+        dispatcher.dispatch(ticket.key, "review", prompt, config.review_ttl,
+                           model=config.review_model)
         stats.reviews_dispatched += 1
 
 
@@ -374,7 +377,8 @@ def phase_review_fix_dispatch(
             f"Jira Site: {config.jira_site}"
         )
         dispatcher.dispatch(
-            ticket.key, "review-fix", prompt, config.review_fix_ttl
+            ticket.key, "review-fix", prompt, config.review_fix_ttl,
+            model=config.review_fix_model,
         )
         stats.review_fixes_dispatched += 1
 
@@ -621,7 +625,8 @@ def phase_retry(
             f"attempted and why it failed. Avoid repeating the same approach."
         )
         dispatcher.dispatch(
-            ticket.key, "fix-investigate", prompt, config.investigate_ttl
+            ticket.key, "fix-investigate", prompt, config.investigate_ttl,
+            model=config.fix_model,
         )
         stats.retries_dispatched += 1
 
@@ -681,10 +686,16 @@ def _extract_fix_branch(comments: list[dict]) -> str | None:
         if isinstance(body, dict):
             from .jira_client import adf_to_text
             body = adf_to_text(body)
-        if "## Fix Plan" in body and "APPROVED" in body:
-            match = re.search(r"\*\*Branch\*\*:\s*`?([^\s`]+)", body)
-            if match:
-                return match.group(1)
+        if "Fix Plan" in body and "APPROVED" in body:
+            for pattern in [
+                r"\*\*Branch\*\*:\s*`?([^\s`]+)",
+                r"\*Branch\*:\s*([^\s]+)",
+                r"^Branch:\s*`?([^\s`]+)",
+                r"Branch\s*:\s*`?([^\s`]+)",
+            ]:
+                match = re.search(pattern, body, re.MULTILINE)
+                if match:
+                    return match.group(1)
     return None
 
 
