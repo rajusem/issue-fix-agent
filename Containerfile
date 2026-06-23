@@ -2,7 +2,7 @@ FROM registry.access.redhat.com/ubi9/python-311:latest
 
 USER 0
 
-RUN dnf install -y git curl jq && dnf clean all
+RUN dnf install -y --allowerasing git curl jq && dnf clean all
 
 RUN curl -fsSL https://cli.github.com/packages/rpm/gh-cli.repo \
       > /etc/yum.repos.d/gh-cli.repo && \
@@ -11,7 +11,14 @@ RUN curl -fsSL https://cli.github.com/packages/rpm/gh-cli.repo \
 RUN OPENSHELL_VERSION=v0.0.62 \
     curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
 
-RUN curl -fsSL https://opencode.ai/install | sh
+RUN cd /tmp && \
+    curl -sL -o opencode.tar.gz \
+    "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz" && \
+    tar xzf opencode.tar.gz && \
+    mv opencode /usr/local/bin/opencode && \
+    chmod +x /usr/local/bin/opencode && \
+    rm -f opencode.tar.gz && \
+    opencode --version
 
 COPY orchestrator/requirements.txt /app/orchestrator/requirements.txt
 RUN pip install --no-cache-dir -r /app/orchestrator/requirements.txt
@@ -26,7 +33,12 @@ COPY opencode.json /app/opencode.json
 COPY AGENTS.md /app/AGENTS.md
 
 WORKDIR /app
-RUN mkdir -p orchestrator/state orchestrator/logs runs .opencode
+RUN mkdir -p orchestrator/state orchestrator/logs runs .opencode \
+    /opt/app-root/src/.local/share/opencode/log \
+    /opt/app-root/src/.config/opencode && \
+    chmod -R 777 /opt/app-root/src/.local /opt/app-root/src/.config && \
+    git config --system user.email "issue-fix-agent@bot.local" && \
+    git config --system user.name "issue-fix-agent"
 
 ENV PYTHONUNBUFFERED=1
 

@@ -23,12 +23,18 @@ spec:
       serviceAccountName: watcher
       terminationGracePeriodSeconds: 300
       securityContext:
-        fsGroup: 1001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: watcher
           image: quay.io/rzalavad/issue-fix-agent:latest
           imagePullPolicy: Always
           command: ["python", "-m", "orchestrator.watcher", "--loop"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               cpu: 100m

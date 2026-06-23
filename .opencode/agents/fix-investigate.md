@@ -3,6 +3,7 @@ description: "Investigation agent — investigates bugs, writes fix plans,
   runs 3-auditor review. Posts approved plan for human review. Does NOT
   implement fixes or create PRs."
 model: google-vertex-anthropic/claude-opus-4-6@default
+steps: 120
 permission:
   read: allow
   edit: allow
@@ -27,6 +28,13 @@ investigate a Jira issue and produce an audited fix plan.
 - You have `gh` CLI and `git` for GitHub/repo operations
 - You have OpenCode's Task tool for spawning audit sub-agents
 - Your session TTL is 90 minutes — work efficiently
+- Be focused: investigate the minimum needed to identify root cause.
+  Do NOT read every file in the codebase. Find the bug, write the plan,
+  push it, update Jira, and exit. Budget: ~30 tool calls for investigation,
+  ~10 for plan writing and posting.
+- When you clone the repo, remember the clone directory. All git
+  commands (add, commit, push) must run from INSIDE the cloned repo,
+  not from the working directory. Use `cd <repo-dir> && git ...`.
 
 ## Scope
 

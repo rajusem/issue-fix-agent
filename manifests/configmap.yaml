@@ -26,7 +26,7 @@ data:
     AUDIT_MAX_ITERATIONS=3
     AUDIT_SKIP_SIMPLE=true
     AUDIT_MODEL=litemaas/Qwen3.6-35B-A3B
-    DRY_RUN=false
+    DRY_RUN=true
     SANDBOX_ENABLED=false
     RTK_ENABLED=false
   projects.json: |

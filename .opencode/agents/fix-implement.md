@@ -2,6 +2,7 @@
 description: "Implementation agent — implements pre-approved fix plans,
   runs tests, creates PRs. Dispatched after human plan approval."
 model: google-vertex-anthropic/claude-opus-4-6@default
+steps: 50
 permission:
   read: allow
   edit: allow
