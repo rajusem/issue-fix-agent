@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: watcher-config
+  namespace: issue-fix-agent
+data:
+  config.env: |
+    JIRA_SITE=stage-redhat.atlassian.net
+    JIRA_POLL_INTERVAL=20
+    FIX_MODEL=litemaas/Qwen3.6-35B-A3B
+    INVESTIGATE_SESSION_TTL=90
+    IMPLEMENT_SESSION_TTL=150
+    REVIEW_MODEL=litemaas/Qwen3.6-35B-A3B
+    REVIEW_SESSION_TTL=30
+    REVIEW_FIX_MODEL=litemaas/Qwen3.6-35B-A3B
+    REVIEW_FIX_SESSION_TTL=45
+    REVIEW_FIX_MAX_CYCLES=3
+    WATCHER_MODEL=litemaas/Qwen3.6-35B-A3B
+    WATCHER_SESSION_TTL=15
+    MAX_CONCURRENT_FIX_SESSIONS=4
+    MAX_CONCURRENT_REVIEW_SESSIONS=2
+    MAX_CONCURRENT_REVIEW_FIX_SESSIONS=2
+    PLAN_APPROVAL_TIMEOUT_HOURS=48
+    MAX_FIX_RETRIES=2
+    AUDIT_ENABLED=true
+    AUDIT_MAX_ITERATIONS=3
+    AUDIT_SKIP_SIMPLE=true
+    AUDIT_MODEL=litemaas/Qwen3.6-35B-A3B
+    DRY_RUN=false
+    SANDBOX_ENABLED=false
+    RTK_ENABLED=false
+  projects.json: |
+    {
+      "watched_projects": ["OBSINTA"],
+      "skill_url_allowlist": [
+        "https://raw.githubusercontent.com/rajusem/*/main/.claude/skills/*"
+      ],
+      "knowledge_repo_allowlist": [],
+      "allowed_repo_hosts": ["github.com"],
+      "bot_service_account": "rzalavad"
+    }

@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issue-fix-watcher
+  namespace: issue-fix-agent
+  labels:
+    app: issue-fix-agent
+    component: watcher
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: issue-fix-agent
+      component: watcher
+  template:
+    metadata:
+      labels:
+        app: issue-fix-agent
+        component: watcher
+    spec:
+      serviceAccountName: watcher
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        fsGroup: 1001
+      containers:
+        - name: watcher
+          image: quay.io/rzalavad/issue-fix-agent:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "orchestrator.watcher", "--loop"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          env:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: watcher-secrets
+                  key: GITHUB_TOKEN
+            - name: JIRA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: watcher-secrets
+                  key: JIRA_USERNAME
+            - name: JIRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: watcher-secrets
+                  key: JIRA_API_TOKEN
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: opencode-config
+              mountPath: /app/.opencode/opencode.json
+              subPath: opencode.json
+              readOnly: true
+            - name: data
+              mountPath: /app/orchestrator/state
+              subPath: state
+            - name: data
+              mountPath: /app/orchestrator/logs
+              subPath: logs
+            - name: data
+              mountPath: /app/runs
+              subPath: runs
+          livenessProbe:
+            exec:
+              command: ["test", "-f", "/tmp/watcher-healthy"]
+            initialDelaySeconds: 60
+            periodSeconds: 300
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: watcher-config
+            items:
+              - key: config.env
+                path: config.env
+              - key: projects.json
+                path: projects.json
+        - name: opencode-config
+          secret:
+            secretName: litemaas-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: watcher-data

@@ -18,10 +18,12 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from pathlib import Path
 
 from .config import Config, load_config, validate_config
@@ -33,10 +35,21 @@ log = logging.getLogger("watcher")
 LOCK_FILE = "/tmp/issue-fix-watcher.lock"
 
 
+_shutdown_requested = False
+
+
+def _handle_sigterm(signum, frame):
+    global _shutdown_requested
+    _shutdown_requested = True
+    log.info("SIGTERM received — finishing current cycle then exiting")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Issue Fix Agent Watcher")
     parser.add_argument("--dry-run", action="store_true",
                         help="Log actions without executing mutations")
+    parser.add_argument("--loop", action="store_true",
+                        help="Run continuously with poll interval sleep (Deployment mode)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -50,15 +63,34 @@ def main():
         config.dry_run = True
     validate_config(config)
 
-    lock_fd = acquire_lock()
-    if lock_fd is None:
-        log.info("Another watcher cycle is running — exiting")
-        sys.exit(0)
-
-    try:
-        run_cycle(config)
-    finally:
-        lock_fd.close()
+    if args.loop:
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+        log.info("Watcher starting in loop mode (poll interval: %dm)",
+                 config.jira_poll_interval)
+        while not _shutdown_requested:
+            lock_fd = acquire_lock()
+            if lock_fd is None:
+                log.info("Another watcher cycle is running — skipping")
+            else:
+                try:
+                    run_cycle(config)
+                    Path("/tmp/watcher-healthy").touch()
+                finally:
+                    lock_fd.close()
+            for _ in range(config.jira_poll_interval * 60):
+                if _shutdown_requested:
+                    break
+                time.sleep(1)
+        log.info("Watcher shutdown complete")
+    else:
+        lock_fd = acquire_lock()
+        if lock_fd is None:
+            log.info("Another watcher cycle is running — exiting")
+            sys.exit(0)
+        try:
+            run_cycle(config)
+        finally:
+            lock_fd.close()
 
 
 def acquire_lock():

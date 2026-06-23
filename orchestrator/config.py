@@ -40,6 +40,7 @@ class Config:
     sandbox_enabled: bool
     slack_webhook_url: str | None
     watcher_ttl: int
+    jira_poll_interval: int
 
 
 def load_config(base_dir: Path | None = None) -> Config:
@@ -90,6 +91,7 @@ def load_config(base_dir: Path | None = None) -> Config:
         sandbox_enabled=os.environ.get("SANDBOX_ENABLED", "false").lower() == "true",
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
         watcher_ttl=int(os.environ.get("WATCHER_SESSION_TTL", "15")),
+        jira_poll_interval=int(os.environ.get("JIRA_POLL_INTERVAL", "20")),
     )
 
     return config

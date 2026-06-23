@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sandbox-policy-test
+  namespace: issue-fix-agent
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      serviceAccountName: watcher
+      restartPolicy: Never
+      containers:
+        - name: test
+          image: quay.io/rzalavad/issue-fix-agent:latest
+          command:
+            - bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "=== OpenShell Sandbox Policy Test ==="
+
+              echo "1. Testing fix-investigate policy..."
+              openshell sandbox create \
+                --name test-policy-$(date +%s) \
+                --policy policies/fix-investigate.yaml \
+                --cpu 1 --memory 2Gi \
+                -- bash -c '
+                  echo "Sandbox OK"
+                  echo "User: $(whoami)"
+                  echo "Workspace: $(pwd)"
+
+                  echo "--- Network Tests ---"
+                  curl -s -o /dev/null -w "github.com: %{http_code}\n" https://github.com --connect-timeout 5 || echo "github.com: BLOCKED"
+                  curl -s -o /dev/null -w "jira: %{http_code}\n" https://stage-redhat.atlassian.net --connect-timeout 5 || echo "jira: BLOCKED"
+                  curl -s -o /dev/null -w "litemaas: %{http_code}\n" https://litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com/health --connect-timeout 5 || echo "litemaas: BLOCKED"
+                  curl -s -o /dev/null -w "google.com: %{http_code}\n" https://google.com --connect-timeout 5 || echo "google.com: BLOCKED (expected)"
+
+                  echo "--- Filesystem Tests ---"
+                  touch /sandbox/test-write && echo "/sandbox: writable OK" && rm /sandbox/test-write
+                  touch /etc/test-write 2>/dev/null && echo "/etc: writable (BAD)" || echo "/etc: read-only OK"
+                '
+
+              echo "=== Test Complete ==="
