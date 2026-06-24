@@ -12,8 +12,14 @@ RUN curl -fsSL https://cli.github.com/packages/rpm/gh-cli.repo \
       > /etc/yum.repos.d/gh-cli.repo && \
     dnf install -y gh && dnf clean all
 
-RUN OPENSHELL_VERSION=v0.0.62 \
-    curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+RUN cd /tmp && \
+    curl -sL -o openshell.tar.gz \
+    "https://github.com/NVIDIA/OpenShell/releases/download/v0.0.62/openshell-x86_64-unknown-linux-musl.tar.gz" && \
+    tar xzf openshell.tar.gz && \
+    mv openshell /usr/local/bin/openshell && \
+    chmod +x /usr/local/bin/openshell && \
+    rm -f openshell.tar.gz && \
+    openshell --version
 
 RUN cd /tmp && \
     curl -sL -o opencode.tar.gz \
@@ -37,10 +43,15 @@ COPY opencode.json /app/opencode.json
 COPY AGENTS.md /app/AGENTS.md
 
 WORKDIR /app
-RUN mkdir -p orchestrator/state orchestrator/logs runs .opencode \
+RUN groupadd -g 1000 sandbox && \
+    useradd -u 1000 -g sandbox -m -s /bin/bash sandbox && \
+    mkdir -p orchestrator/state orchestrator/logs runs .opencode \
     /opt/app-root/src/.local/share/opencode/log \
-    /opt/app-root/src/.config/opencode && \
-    chmod -R 777 /opt/app-root/src/.local /opt/app-root/src/.config && \
+    /opt/app-root/src/.config/opencode \
+    /home/sandbox/.local/share/opencode/log \
+    /home/sandbox/.config/opencode && \
+    chmod -R 777 /opt/app-root/src/.local /opt/app-root/src/.config \
+    /home/sandbox/.local /home/sandbox/.config && \
     git config --system user.email "issue-fix-agent@bot.local" && \
     git config --system user.name "issue-fix-agent"
 

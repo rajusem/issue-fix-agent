@@ -6,7 +6,7 @@ metadata:
 data:
   config.env: |
     JIRA_SITE=stage-redhat.atlassian.net
-    JIRA_POLL_INTERVAL=20
+    JIRA_POLL_INTERVAL=10
     FIX_MODEL=litemaas/Qwen3.6-35B-A3B
     INVESTIGATE_SESSION_TTL=90
     IMPLEMENT_SESSION_TTL=150
@@ -26,8 +26,8 @@ data:
     AUDIT_MAX_ITERATIONS=3
     AUDIT_SKIP_SIMPLE=true
     AUDIT_MODEL=litemaas/Qwen3.6-35B-A3B
-    DRY_RUN=true
-    SANDBOX_ENABLED=false
+    DRY_RUN=false
+    SANDBOX_ENABLED=true
     RTK_ENABLED=false
   projects.json: |
     {

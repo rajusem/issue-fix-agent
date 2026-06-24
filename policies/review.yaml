@@ -7,9 +7,13 @@ filesystem_policy:
     - /lib
     - /etc
     - /bin
+    - /app
+    - /opt
   read_write:
     - /sandbox
     - /tmp
+    - /home
+    - /dev
 
 landlock:
   compatibility: best_effort
@@ -30,7 +34,7 @@ network_policies:
         protocol: rest
         access: read-only
     binaries:
-      - path: /sandbox/**
+      - path: /**
 
   githubusercontent:
     endpoints:
@@ -39,7 +43,7 @@ network_policies:
         protocol: rest
         access: read-only
     binaries:
-      - path: /sandbox/**
+      - path: /**
 
   jira:
     endpoints:
@@ -48,7 +52,7 @@ network_policies:
         protocol: rest
         access: full
     binaries:
-      - path: /sandbox/**
+      - path: /**
 
   vertex_ai:
     endpoints:
@@ -61,4 +65,13 @@ network_policies:
         protocol: rest
         access: full
     binaries:
-      - path: /sandbox/**
+      - path: /**
+
+  litemaas:
+    endpoints:
+      - host: litellm-litemaas.apps.prod.rhoai.rh-aiservices-bu.com
+        port: 443
+        protocol: rest
+        access: full
+    binaries:
+      - path: /**

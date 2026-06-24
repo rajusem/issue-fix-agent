@@ -41,33 +41,52 @@ class Dispatcher:
         log_file = str(LOGS_DIR / f"{ticket_key}-{agent}-{timestamp}.log")
         sandbox_name = None
 
-        opencode_cmd = ["opencode", "run", "--agent", agent,
-                        "--dangerously-skip-permissions",
-                        "--dir", "/tmp"]
+        opencode_args = ["--agent", agent,
+                         "--dangerously-skip-permissions",
+                         "--dir", "/tmp"]
         if model:
-            opencode_cmd.extend(["-m", model])
-        opencode_cmd.append(prompt)
+            opencode_args.extend(["-m", model])
 
         timeout_cmd = ["timeout", f"{ttl_minutes}m"]
         if not shutil.which("timeout"):
             timeout_cmd = []
 
+        env_file = None
         if self.config.sandbox_enabled:
             sandbox_name = f"{ticket_key}-{agent}-{uuid.uuid4().hex[:8]}".lower()
             policy_file = str(POLICIES_DIR / f"{agent}.yaml")
-            env_file = self._write_env_file()
 
+            env_args = []
+            for k, v in self._get_env_vars().items():
+                env_args.extend(["--env", f"{k}={v}"])
+
+            escaped_prompt = prompt.replace("'", "'\\''")
+            oc_args = " ".join(opencode_args)
+            init_script = (
+                "mkdir -p /tmp/.opencode && "
+                "ln -sf /app/.opencode/agents /tmp/.opencode/agents && "
+                "ln -sf /app/.opencode/skills /tmp/.opencode/skills && "
+                "ln -sf /app/.opencode/plugins /tmp/.opencode/plugins && "
+                "ln -sf /app/.opencode/settings.json /tmp/.opencode/settings.json && "
+                "ln -sf /app/opencode.json /tmp/opencode.json && "
+                "ln -sf /app/AGENTS.md /tmp/AGENTS.md && "
+                'echo "$LITEMAAS_CONFIG" > /tmp/.opencode/opencode.json && '
+                f"opencode run {oc_args} '{escaped_prompt}'"
+            )
+
+            sandbox_image = os.environ.get(
+                "SANDBOX_IMAGE", "quay.io/rzalavad/issue-fix-agent:latest",
+            )
             cmd = [
                 "openshell", "sandbox", "create",
                 "--name", sandbox_name,
+                "--from", sandbox_image,
                 "--policy", policy_file,
                 "--cpu", "2",
                 "--memory", "8Gi",
-                "--env-file", env_file,
-                "--",
-            ] + timeout_cmd + opencode_cmd
+            ] + env_args + ["--"] + timeout_cmd + ["bash", "-c", init_script]
         else:
-            env_file = None
+            opencode_cmd = ["opencode", "run"] + opencode_args + [prompt]
             cmd = timeout_cmd + opencode_cmd
 
         with open(log_file, "w") as lf:
@@ -178,16 +197,38 @@ class Dispatcher:
         except (subprocess.TimeoutExpired, OSError) as e:
             log.error("Failed to delete sandbox %s: %s", sandbox_name, e)
 
+    def _get_env_vars(self) -> dict:
+        env = {
+            "GITHUB_TOKEN": self.config.github_token,
+            "JIRA_USERNAME": self.config.jira_username,
+            "JIRA_API_TOKEN": self.config.jira_api_token,
+            "JIRA_URL": f"https://{self.config.jira_site}",
+            "GOOGLE_CLOUD_PROJECT": os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
+            "ANTHROPIC_VERTEX_PROJECT_ID": os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", ""),
+            "VERTEX_LOCATION": os.environ.get("VERTEX_LOCATION", ""),
+        }
+        litemaas = self._read_litemaas_config()
+        if litemaas:
+            env["LITEMAAS_CONFIG"] = litemaas
+        return env
+
+    def _read_litemaas_config(self) -> str | None:
+        for path in [
+            "/tmp/litemaas-config/opencode.json",
+            "/tmp/.opencode/opencode.json",
+        ]:
+            try:
+                with open(path) as f:
+                    return f.read().strip()
+            except OSError:
+                continue
+        return None
+
     def _write_env_file(self) -> str:
         fd, path = tempfile.mkstemp(prefix="sandbox-env-", suffix=".env")
         with os.fdopen(fd, "w") as f:
-            f.write(f"GITHUB_TOKEN={self.config.github_token}\n")
-            f.write(f"JIRA_USERNAME={self.config.jira_username}\n")
-            f.write(f"JIRA_API_TOKEN={self.config.jira_api_token}\n")
-            f.write(f"JIRA_URL=https://{self.config.jira_site}\n")
-            f.write(f"GOOGLE_CLOUD_PROJECT={os.environ.get('GOOGLE_CLOUD_PROJECT', '')}\n")
-            f.write(f"ANTHROPIC_VERTEX_PROJECT_ID={os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', '')}\n")
-            f.write(f"VERTEX_LOCATION={os.environ.get('VERTEX_LOCATION', '')}\n")
+            for k, v in self._get_env_vars().items():
+                f.write(f"{k}={v}\n")
         os.chmod(path, 0o600)
         return path
 

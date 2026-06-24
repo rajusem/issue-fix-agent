@@ -157,7 +157,7 @@ def phase_new_tickets(
         f"labels = autofix AND labels NOT IN "
         f"(bot-in-progress, bot-ready-for-review, bot-review-complete, "
         f"bot-review-fix, bot-merged, bot-fix-failed, bot-missing-info, "
-        f"no-autofix, bot-cancelled, bot-plan-ready) "
+        f"no-autofix, bot-cancelled, bot-plan-ready, bot-proceed, bot-plan-approved) "
         f"AND project IN ({projects})"
     )
     issues = jira.search(jql)
@@ -216,7 +216,7 @@ def phase_plan_approval(
 ):
     projects = ",".join(config.watched_projects)
     jql = (
-        f"labels = bot-plan-ready AND labels = bot-proceed "
+        f"labels = bot-plan-ready AND (labels = bot-proceed OR labels = bot-plan-approved) "
         f"AND labels NOT IN (bot-in-progress) "
         f"AND project IN ({projects})"
     )
@@ -241,7 +241,7 @@ def phase_plan_approval(
 
         jira.swap_labels(
             ticket.key,
-            remove=["bot-plan-ready", "bot-proceed"],
+            remove=["bot-plan-ready", "bot-proceed", "bot-plan-approved"],
             add=["bot-in-progress"],
         )
         jira.add_comment(

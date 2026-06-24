@@ -42,6 +42,12 @@ spec:
               ln -sf /app/.opencode/plugins /tmp/.opencode/plugins
               ln -sf /app/.opencode/settings.json /tmp/.opencode/settings.json
               ln -sf /tmp/litemaas-config/opencode.json /tmp/.opencode/opencode.json
+              # Setup OpenShell gateway with mTLS certs
+              if [ -f /tmp/openshell-tls/ca.crt ]; then
+                mkdir -p $HOME/.config/openshell/gateways/k8s/mtls
+                cp /tmp/openshell-tls/* $HOME/.config/openshell/gateways/k8s/mtls/
+                openshell gateway add https://openshell.openshell.svc.cluster.local:8080 --name k8s --local 2>&1 || true
+              fi
               echo "Symlinks ready:" && ls -la /tmp/.opencode/
               cd /app && python -m orchestrator.watcher --loop
           securityContext:
@@ -85,6 +91,9 @@ spec:
               mountPath: /tmp/litemaas-config/opencode.json
               subPath: opencode.json
               readOnly: true
+            - name: openshell-tls
+              mountPath: /tmp/openshell-tls
+              readOnly: true
             - name: data
               mountPath: /app/orchestrator/state
               subPath: state
@@ -115,6 +124,9 @@ spec:
         - name: opencode-config-tmp
           secret:
             secretName: litemaas-config
+        - name: openshell-tls
+          secret:
+            secretName: openshell-client-tls
         - name: data
           persistentVolumeClaim:
             claimName: watcher-data

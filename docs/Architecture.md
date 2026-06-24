@@ -35,14 +35,16 @@ L2 — Sandbox:          OpenShell — Landlock filesystem, network policies,
                        process restrictions, per-agent YAML policies
 L3 — Agent Runtime:    OpenCode — skills, agents, MCP servers, hooks
 L4 — Domain Logic:     Skill files — investigation, audit, review, fix
-L5 — Model:            Claude Opus/Sonnet (via Anthropic API)
+L5 — Model:            Qwen 3.6 35B via LiteMaaS (production)
+                       Claude Opus/Sonnet via Vertex AI (evaluation)
 ```
 
-The orchestrator (Python watcher) runs at L1 as a K8s CronJob. It
-creates OpenShell sandboxes (L2) that run OpenCode (L3) with our
-skill files (L4). Each sandbox gets its own mcp-atlassian instance
-for Jira access. Secrets are injected via K8s Secrets / OpenShell
-`--env`, never through prompts.
+The orchestrator (Python watcher) runs at L1 as a K8s Deployment
+(single-replica, loop mode). It creates OpenShell sandboxes (L2) using
+our custom image (`--from`) that run OpenCode (L3) with our skill
+files (L4). Secrets are injected via `--env` flags on sandbox creation,
+never through prompts. The sandbox init script creates symlinks for
+config discovery and writes the LiteMaaS config from an env var.
 
 ## System Context
 
@@ -58,7 +60,7 @@ for Jira access. Secrets are injected via K8s Secrets / OpenShell
          ▼                     ▼                     │
   ┌──────────────────────────────────────────────────┤
   │           Orchestrator (Python watcher)          │
-  │  - Polls Jira every 20 min                      │
+  │  - Polls Jira every 10 min                      │
   │  - Label state machine                          │
   │  - Dispatches sandboxed agents                  │
   │  - Concurrency limits, retry, cancel            │
@@ -91,11 +93,11 @@ for Jira access. Secrets are injected via K8s Secrets / OpenShell
 User creates Jira ticket with autofix label + repo URL
   │
   ▼
-ORCHESTRATOR (Python watcher, cron every 20 min)
+ORCHESTRATOR (Python watcher, Deployment loop every 10 min)
   │ Polls Jira via REST API, dispatches sandboxed agents
   │
   ▼
-FIX AGENT (Opus, 150m TTL)
+FIX-INVESTIGATE AGENT (Qwen 3.6 35B, 90m TTL, sandboxed)
   │
   ├─ Phase 1: Understand        Read Jira ticket, parse config
   ├─ Phase 2: Prepare           Clone repo, create fix branch
@@ -125,15 +127,23 @@ FIX AGENT (Opus, 150m TTL)
   ├─ Context compaction: save plan to .audit/approved-plan.md,
   │   discard raw sub-agent responses
   │
-  ├─ Phase 5: Implement Fix     Execute audited plan
-  ├─ Phase 6: Pre-PR Checks     Pre-commit, self-review, no secrets
-  ├─ Phase 7: Test              Run tests, max 3 fix iterations
-  ├─ Phase 8: Regression Test   Add test that catches original bug
-  ├─ Phase 9: Commit & PR       Conventional commit + AI attribution
-  └─ Phase 10: Update Jira      Label swap + structured comment
+  │
+  ├─ Post plan to Jira, set bot-plan-ready
+  └─ Wait for human approval (bot-plan-approved or bot-proceed)
   │
   ▼
-REVIEW AGENT (Sonnet, 30m TTL)
+FIX-IMPLEMENT AGENT (Qwen 3.6 35B, 150m TTL, sandboxed)
+  │
+  ├─ Phase 5: Read Plan         Fetch approved plan from branch
+  ├─ Phase 6: Implement Fix     Execute audited plan
+  ├─ Phase 7: Pre-PR Checks     Pre-commit, self-review, no secrets
+  ├─ Phase 8: Test              Run tests, max 3 fix iterations
+  ├─ Phase 9: Regression Test   Add test that catches original bug
+  ├─ Phase 10: Commit & PR      Conventional commit + AI attribution
+  └─ Phase 11: Update Jira      Label swap + structured comment
+  │
+  ▼
+REVIEW AGENT (Qwen 3.6 35B, 30m TTL, sandboxed)
   │ 3-lens review: correctness, security, quality
   │ NEVER approves — posts findings only
   │
@@ -141,7 +151,7 @@ REVIEW AGENT (Sonnet, 30m TTL)
   └─ Findings → bot-review-fix
   │
   ▼
-REVIEW-FIX AGENT (Opus, 45m TTL, max 3 cycles)
+REVIEW-FIX AGENT (Qwen 3.6 35B, 45m TTL, max 3 cycles, sandboxed)
   │ Address CRITICAL first, then MAJOR
   │ Push to same branch → re-queue for review
   │
@@ -601,7 +611,7 @@ Agent-specific models are configured in `.opencode/agents/*.md` via the
 | `MAX_CONCURRENT_FIX_SESSIONS` | 4 | Parallel fix sessions |
 | `MAX_CONCURRENT_REVIEW_SESSIONS` | 2 | Parallel review sessions |
 | `MAX_CONCURRENT_REVIEW_FIX_SESSIONS` | 2 | Parallel review-fix sessions |
-| `JIRA_POLL_INTERVAL` | 20 | Minutes between watcher cycles |
+| `JIRA_POLL_INTERVAL` | 10 | Minutes between watcher cycles |
 | `REVIEW_FIX_MAX_CYCLES` | 3 | Max review-fix iterations |
 | `MAX_FIX_RETRIES` | 2 | Max retry attempts for failed fixes (user adds bot-retry) |
 | `RTK_ENABLED` | false | RTK token optimization (opt-in) |
