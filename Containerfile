@@ -33,6 +33,21 @@ RUN cd /tmp && \
 COPY orchestrator/requirements.txt /app/orchestrator/requirements.txt
 RUN pip install --no-cache-dir -r /app/orchestrator/requirements.txt
 
+COPY config/go-mod-repos.txt /tmp/go-mod-repos.txt
+RUN mkdir -p /home/sandbox/go/pkg/mod && \
+    while IFS= read -r repo; do \
+      [ -z "$repo" ] || [ "${repo#\#}" != "$repo" ] && continue; \
+      echo "Pre-caching Go modules: $repo" && \
+      cd /tmp && git clone --depth 1 "$repo" _go_cache 2>/dev/null && \
+      cd _go_cache && GOMODCACHE=/home/sandbox/go/pkg/mod go mod download 2>/dev/null && \
+      GOMODCACHE=/home/sandbox/go/pkg/mod go mod vendor 2>/dev/null && \
+      cp -r vendor /home/sandbox/go/vendor-cache 2>/dev/null; \
+      rm -rf /tmp/_go_cache; \
+    done < /tmp/go-mod-repos.txt && \
+    chmod -R 755 /home/sandbox/go && \
+    chown -R 1000:1000 /home/sandbox/go && \
+    rm -f /tmp/go-mod-repos.txt
+
 COPY config/ /app/config/
 COPY orchestrator/ /app/orchestrator/
 COPY policies/ /app/policies/
@@ -51,7 +66,7 @@ RUN groupadd -g 1000 sandbox && \
     /home/sandbox/.local/share/opencode/log \
     /home/sandbox/.config/opencode && \
     chmod -R 777 /opt/app-root/src/.local /opt/app-root/src/.config \
-    /home/sandbox/.local /home/sandbox/.config && \
+    /home/sandbox/.local /home/sandbox/.config /home/sandbox && \
     git config --system user.email "issue-fix-agent@bot.local" && \
     git config --system user.name "issue-fix-agent"
 

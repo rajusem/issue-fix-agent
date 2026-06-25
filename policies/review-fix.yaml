@@ -47,6 +47,7 @@ network_policies:
 
   jira:
     endpoints:
+      # PARAMETERIZE: replace with production Jira hostname
       - host: stage-redhat.atlassian.net
         port: 443
         protocol: rest
@@ -64,6 +65,23 @@ network_policies:
         port: 443
         protocol: rest
         access: full
+    binaries:
+      - path: /**
+
+  golang:
+    endpoints:
+      - host: proxy.golang.org
+        port: 443
+        protocol: rest
+        access: full
+      - host: sum.golang.org
+        port: 443
+        protocol: rest
+        access: full
+      - host: storage.googleapis.com
+        port: 443
+        protocol: rest
+        access: read-only
     binaries:
       - path: /**
 

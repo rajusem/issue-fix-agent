@@ -47,6 +47,7 @@ network_policies:
 
   jira:
     endpoints:
+      # PARAMETERIZE: replace with production Jira hostname
       - host: stage-redhat.atlassian.net
         port: 443
         protocol: rest

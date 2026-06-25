@@ -103,6 +103,11 @@ spec:
             - name: data
               mountPath: /app/runs
               subPath: runs
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/tmp/watcher-healthy"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
           livenessProbe:
             exec:
               command: ["test", "-f", "/tmp/watcher-healthy"]

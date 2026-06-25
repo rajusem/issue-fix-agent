@@ -473,9 +473,9 @@ failed with `ProviderModelNotFoundError`.
 Sandbox pods are separate — they don't share volume mounts.
 
 **Fix**: Read the LiteMaaS config from the mounted path in the
-watcher pod, pass it as `LITEMAAS_CONFIG` env var via
-`--env LITEMAAS_CONFIG=...`, and write it to
-`/tmp/.opencode/opencode.json` in the sandbox init script.
+watcher pod, pass it via an uploaded env file (not `--env` — see
+lesson 30), and write it to `/tmp/.opencode/opencode.json` in the
+sandbox init script.
 
 **Lesson**: Any config that comes from K8s Secrets must be explicitly
 forwarded to sandboxes — they don't inherit volume mounts.
@@ -538,6 +538,219 @@ in every phase. Label name consistency matters.
 
 ---
 
+## 30. OpenShell `--env KEY=VALUE` Truncates Values Containing `=`
+
+**What happened**: The Jira API token (`ATATT3x...6w=185E6394`)
+was truncated to `ATATT3x...6w=` inside the sandbox. The `185E6394`
+after the second `=` was dropped, causing Jira 404 errors.
+
+**Root cause**: OpenShell's `--env` flag parses `KEY=VALUE` by
+splitting on `=`. Values containing `=` (common in base64-encoded
+tokens and API keys) get truncated.
+
+**Fix**: Use `--upload` to send an env file into the sandbox instead
+of `--env` flags. The env file is sourced in the init script:
+```python
+env_file = self._write_env_file()
+cmd = ["openshell", "sandbox", "create",
+       "--upload", f"{env_file}:/tmp/sandbox-env", ...]
+init_script = "set -a && source /tmp/sandbox-env && set +a && rm -f /tmp/sandbox-env && ..."
+```
+
+**Lesson**: Never pass credentials via `--env KEY=VALUE` when values
+might contain `=`. Use file upload + source instead.
+
+---
+
+## 31. Env File Deleted Before Sandbox Upload Completes
+
+**What happened**: The env file cleanup timer (5 seconds) deleted
+the file before openshell could upload it. Sandbox startup takes
+~10-30 seconds (allocate + pull image), so the file was gone.
+
+**Fix**: Increased cleanup timer from 5 seconds to 120 seconds.
+
+**Lesson**: Sandbox creation is async — the upload happens after
+image pulls complete. Any temp files needed for `--upload` must
+survive the full startup sequence.
+
+---
+
+## 32. Bash `source` Strips JSON Quotes and Expands `$` Variables
+
+**What happened**: The LiteMaaS config JSON stored in the env file
+as `LITEMAAS_CONFIG={"$schema":"https://..."}` lost all double
+quotes and `$schema` was expanded (to empty string).
+
+**Root cause**: When bash sources a file with `KEY=value`, it
+interprets `"` as shell quotes (stripping them) and `$` as
+variable expansion.
+
+**Fix**: Single-quote all values in the env file:
+```python
+escaped = v.replace("'", "'\\''")
+f.write(f"{k}='{escaped}'\n")
+```
+
+Single quotes prevent all bash interpretation — no quote stripping,
+no variable expansion, no globbing.
+
+**Lesson**: Env files sourced by bash need single-quoted values.
+Double quotes are NOT safe for JSON content or values with `$`.
+
+---
+
+## 33. Go Proxy Blocked by Sandbox Network Policy
+
+**What happened**: `go test` and `go build` inside the sandbox failed
+with `Forbidden` errors when downloading modules from `proxy.golang.org`.
+
+**Root cause**: The sandbox network policies only allowed Jira, GitHub,
+LiteMaaS, and Vertex AI endpoints. Go toolchain needs `proxy.golang.org`,
+`sum.golang.org`, and `storage.googleapis.com`.
+
+**Fix**: Added Go endpoints to `fix-implement.yaml` and `review-fix.yaml`
+sandbox policies.
+
+**Lesson**: Any build toolchain the agent might use needs its package
+registry endpoints in the sandbox network policy.
+
+---
+
+## 34. Go Module Cache Not Available in Sandbox
+
+**What happened**: Even with Go proxy endpoints allowed, downloading
+500MB+ of modules was slow and consumed agent steps.
+
+**Fix**: Pre-cache Go modules during image build:
+```dockerfile
+COPY config/go-mod-repos.txt /tmp/go-mod-repos.txt
+RUN git clone --depth 1 "$repo" && cd repo && \
+    GOMODCACHE=/home/sandbox/go/pkg/mod go mod download && \
+    go mod vendor && cp -r vendor /home/sandbox/go/vendor-cache
+```
+
+Also set `GOMODCACHE` and `GOFLAGS=-mod=mod` in the sandbox init script.
+
+**Lesson**: Pre-cache build dependencies in the container image for
+repos the agent will work on. The `config/go-mod-repos.txt` file
+lists repos to pre-cache.
+
+---
+
+## 35. `/home/sandbox/.cache` Permission Denied (Bun/OpenCode)
+
+**What happened**: OpenCode (Bun runtime) failed with
+`EACCES: permission denied, mkdir '/home/sandbox/.cache'`.
+
+**Fix**: `chmod 777 /home/sandbox` in Containerfile (was only
+chmod-ing subdirectories).
+
+**Lesson**: The sandbox user's entire home directory needs to be
+writable — not just specific subdirectories.
+
+---
+
+## 36. Agent-Sandbox Controller Needs Admin ClusterRoleBinding
+
+**What happened**: Sandbox pods stuck in `Provisioning` phase.
+OpenShell reported "supervisor session not connected".
+
+**Root cause**: The agent-sandbox-controller couldn't set
+`blockOwnerDeletion` on pods/PVCs/services because it lacked
+permissions.
+
+**Fix**: Grant admin ClusterRoleBinding to the controller:
+```bash
+oc create clusterrolebinding sandbox-controller-admin \
+  --clusterrole=admin \
+  --serviceaccount=agent-sandbox-system:agent-sandbox-controller
+```
+
+**Lesson**: The agent-sandbox CRD controller needs broader RBAC
+than its default manifest provides on OpenShift.
+
+---
+
+## 37. OpenShell Supervisor Relay Race Condition
+
+**What happened**: Sandbox creation succeeded but SSH connection
+failed intermittently with "supervisor session not connected".
+
+**Root cause**: The OpenShell supervisor inside the sandbox pod
+isn't ready when the client tries to SSH immediately after creation.
+Happens ~50% of the time on clusters where image pull is slow.
+
+**Fix**: Wrap sandbox creation in a retry loop (3 attempts, 15s delay):
+```python
+retry_cmd = ["bash", "-c",
+    "for attempt in 1 2 3; do "
+    "\"$@\" && exit 0; "
+    "sleep 15; done; exit 1", "--"] + cmd
+```
+
+**Lesson**: OpenShell sandbox creation is not guaranteed to succeed
+on the first attempt. Always retry with delay.
+
+---
+
+## 38. `--env KEY=VALUE` vs `--upload` vs Base64 for Credentials
+
+**What happened**: Three approaches tried for passing credentials
+to sandboxes:
+1. `--env KEY=VALUE` — truncates values containing `=`
+2. `--upload` env file — fails with "supervisor session not connected"
+3. `--env _B64_KEY=<base64>` + decode in init script — works reliably
+
+**Fix**: Base64-encode values containing `=`, `"`, `'`, or `$`:
+```python
+b64 = base64.b64encode(v.encode()).decode()
+env_args.extend(["--env", f"_B64_{k}={b64}"])
+# In init script: export K=$(echo "$_B64_K" | base64 -d)
+```
+
+**Lesson**: Use base64 encoding for any credential values that
+contain shell-special characters. It's more reliable than file
+upload (no timing dependency) and handles all special characters.
+
+---
+
+## 39. Investigate Agent Must Checkout Ticket's Branch
+
+**What happened**: Agent cloned the repo (default branch = main)
+and found the bug was already fixed. Proposed a wrong fix approach
+(ConditionCheck API that doesn't exist).
+
+**Root cause**: The investigate skill didn't checkout the branch
+specified in the ticket's `**Branch**:` field. The agent investigated
+`main` (where the fix already exists) instead of the target branch.
+
+**Fix**: Added explicit checkout step in the investigate skill:
+```bash
+git fetch origin <branch> && git checkout <branch>
+```
+
+**Lesson**: Always checkout the ticket's specified branch before
+investigation. The default branch may have different code.
+
+---
+
+## 40. NetworkPolicy DNS Port is 53, Not 5353
+
+**What happened**: Watcher couldn't resolve any hostnames. All Jira
+API calls failed with `NameResolutionError`.
+
+**Root cause**: NetworkPolicy allowed DNS on port 5353 but OpenShift
+CoreDNS listens on port 53.
+
+**Fix**: Changed DNS port in networkpolicy.yaml from 5353 to 53.
+
+**Lesson**: OpenShift CoreDNS uses standard port 53, not the mDNS
+port 5353. Always verify the actual service port before creating
+NetworkPolicies.
+
+---
+
 ## Summary: What Makes Enterprise Agent Pipelines Hard
 
 1. **Structural enforcement** > instructional enforcement
@@ -558,3 +771,12 @@ in every phase. Label name consistency matters.
     make outbound calls — not just filesystem access.
 14. **Label state machines need exhaustive JQL audits** — every new
     label must be included/excluded in every phase's query.
+15. **Credential injection needs base64** — `--env` truncates `=`,
+    `--upload` has timing issues. Base64 encode + decode is reliable.
+16. **Pre-cache build deps in the image** — Go modules, npm packages,
+    etc. should be cached during `podman build`, not downloaded at runtime.
+17. **Retry sandbox creation** — OpenShell supervisor has a startup
+    race condition. Always retry with delay.
+18. **Checkout the ticket's branch** — agent investigating `main`
+    instead of the target branch produces wrong fix plans.
+19. **Verify DNS port** — OpenShift CoreDNS is port 53, not 5353.

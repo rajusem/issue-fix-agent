@@ -1,0 +1,4 @@
+# Go repositories to pre-cache modules for in the container image.
+# One repo URL per line. Modules are downloaded during image build
+# so sandbox agents can run `go build` and `go test` without network.
+https://github.com/rajusem/multicluster-observability-operator

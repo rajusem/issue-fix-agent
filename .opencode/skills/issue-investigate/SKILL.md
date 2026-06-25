@@ -245,8 +245,12 @@ fix attempt. Before proceeding to Phase 1:
    Note: this disables the repo's native git hooks, NOT the `pre-commit`
    framework. The implementation agent's `pre-commit run --all-files`
    uses the pre-commit framework which is independent of `core.hooksPath`.
-3. Determine base branch (from ticket or repo default).
-4. Create fix branch — deterministic, no confirmation:
+3. Determine base branch (from ticket `**Branch**:` field or repo default).
+   If a branch is specified, checkout that branch first:
+   ```bash
+   git fetch origin <branch> && git checkout <branch>
+   ```
+4. Create fix branch FROM the base branch — deterministic, no confirmation:
    ```bash
    SUMMARY_SLUG=$(echo "$SUMMARY" | tr -dc '[:alnum:] ' | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
    BRANCH=$(echo "${TICKET_KEY}/${SUMMARY_SLUG}" | head -c 60 | sed 's/-$//')
@@ -335,6 +339,29 @@ for domain context during investigation.
 
 Always run this phase — even for simple fixes. The plan provides
 traceability and enables the review agent's plan compliance check.
+
+**CRITICAL — Approach Selection Rules:**
+- Prefer the SIMPLEST approach that fixes the root cause. A one-line
+  change to existing code is better than adding new API fields.
+- Before proposing use of any struct field, VERIFY it exists: run
+  `go doc package.Type` or `grep -r "FieldName" vendor/` to confirm.
+- Do NOT propose using API fields that don't exist in the project's
+  dependency versions. Check go.mod for the exact version.
+- If multiple approaches exist, pick the one that changes fewer files
+  and uses only APIs already used elsewhere in the codebase.
+- To inspect Go module types, browse the pre-cached source at
+  `/home/sandbox/go/pkg/mod/<module>@<version>/` for struct defs.
+- Common OCM pattern for filtering Placement by cluster label:
+  ```go
+  Predicates: []clusterv1beta1.ClusterPredicate{{
+      RequiredClusterSelector: clusterv1beta1.ClusterSelector{
+          LabelSelector: metav1.LabelSelector{
+              MatchLabels: map[string]string{"vendor": "OpenShift"},
+          },
+      },
+  }}
+  ```
+  Use this when fixing empty Predicates in Placement resources.
 
 1. Create the audit directory:
    ```bash

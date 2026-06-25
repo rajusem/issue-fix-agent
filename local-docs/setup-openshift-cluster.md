@@ -338,8 +338,67 @@ Common issues:
 | Jira API token | [Atlassian API tokens](https://id.atlassian.com/manage-profile/security/api-tokens) | K8s Secret |
 | LiteMaaS API key | LiteMaaS admin (rh-aiservices-bu team) | K8s Secret (in opencode.json) |
 
-## Issues Found During Setup (29 total)
+## Step 5: Production Hardening
+
+### 5a. Apply NetworkPolicy
+
+Restricts watcher egress to Jira, GitHub, LiteMaaS, OpenShell, DNS:
+```bash
+oc apply -f manifests/networkpolicy.yaml
+```
+
+Sandbox pod egress is separately controlled by OpenShell Landlock
+policies in `policies/*.yaml`.
+
+### 5b. Apply ResourceQuota
+
+```bash
+oc apply -f manifests/resourcequota.yaml
+```
+
+Caps: 20 pods, 16 CPU requests, 32Gi memory requests.
+
+### 5c. For production Jira
+
+Replace the stage hostname in sandbox policies:
+```bash
+JIRA_HOST=your-production.atlassian.net
+sed -i "s/stage-redhat.atlassian.net/$JIRA_HOST/g" policies/*.yaml
+```
+
+Also update `JIRA_SITE` in `manifests/configmap.yaml` and rebuild
+the image.
+
+## Step 6: Post-Deploy (Required for Sandbox Reliability)
+
+### 6a. Grant admin RBAC to sandbox controller
+
+The agent-sandbox-controller needs broader permissions than its
+default manifest provides:
+```bash
+oc create clusterrolebinding sandbox-controller-admin \
+  --clusterrole=admin \
+  --serviceaccount=agent-sandbox-system:agent-sandbox-controller
+```
+
+### 6b. Verify sandbox creation
+
+```bash
+oc exec deploy/issue-fix-watcher -n issue-fix-agent -- \
+  openshell sandbox create --name test \
+  --from quay.io/rzalavad/issue-fix-agent:latest \
+  -- echo "SANDBOX WORKS"
+```
+
+If this fails with "supervisor session not connected", wait 30s
+and retry — the supervisor has a startup race condition. The
+dispatcher retries automatically (3 attempts, 15s delay).
+
+## Issues Found During Setup (40 total)
 
 See `local-docs/learnings.md` for the full list of issues discovered
-during iterative cluster deployment testing. Issues 1-22 cover the
-basic pipeline; issues 23-29 cover OpenShell sandbox integration.
+during iterative cluster deployment testing:
+- Issues 1-22: basic pipeline
+- Issues 23-29: OpenShell sandbox integration
+- Issues 30-32: credential injection into sandboxes
+- Issues 33-40: production hardening + Go toolchain + sandbox reliability

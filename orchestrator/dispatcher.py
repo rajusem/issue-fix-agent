@@ -57,12 +57,22 @@ class Dispatcher:
             policy_file = str(POLICIES_DIR / f"{agent}.yaml")
 
             env_args = []
+            b64_decode_cmds = []
             for k, v in self._get_env_vars().items():
-                env_args.extend(["--env", f"{k}={v}"])
+                if "=" in v or '"' in v or "'" in v or "$" in v:
+                    import base64
+                    b64 = base64.b64encode(v.encode()).decode()
+                    env_args.extend(["--env", f"_B64_{k}={b64}"])
+                    b64_decode_cmds.append(
+                        f'export {k}=$(echo "$_B64_{k}" | base64 -d)')
+                else:
+                    env_args.extend(["--env", f"{k}={v}"])
 
             escaped_prompt = prompt.replace("'", "'\\''")
             oc_args = " ".join(opencode_args)
+            b64_init = " && ".join(b64_decode_cmds) + " && " if b64_decode_cmds else ""
             init_script = (
+                f"{b64_init}"
                 "mkdir -p /tmp/.opencode && "
                 "ln -sf /app/.opencode/agents /tmp/.opencode/agents && "
                 "ln -sf /app/.opencode/skills /tmp/.opencode/skills && "
@@ -70,7 +80,9 @@ class Dispatcher:
                 "ln -sf /app/.opencode/settings.json /tmp/.opencode/settings.json && "
                 "ln -sf /app/opencode.json /tmp/opencode.json && "
                 "ln -sf /app/AGENTS.md /tmp/AGENTS.md && "
-                'echo "$LITEMAAS_CONFIG" > /tmp/.opencode/opencode.json && '
+                'echo "$LITEMAAS_CONFIG" > /tmp/.opencode/opencode.json && chmod 600 /tmp/.opencode/opencode.json && '
+                "export GOMODCACHE=/home/sandbox/go/pkg/mod && "
+                "export GOFLAGS=-mod=mod && "
                 f"opencode run {oc_args} '{escaped_prompt}'"
             )
 
@@ -89,6 +101,19 @@ class Dispatcher:
             opencode_cmd = ["opencode", "run"] + opencode_args + [prompt]
             cmd = timeout_cmd + opencode_cmd
 
+        if self.config.sandbox_enabled:
+            retry_cmd = [
+                "bash", "-c",
+                "for attempt in 1 2 3; do "
+                "\"$@\" && exit 0; "
+                "echo \"Sandbox attempt $attempt failed, retrying in 15s...\"; "
+                f"openshell sandbox delete {sandbox_name} 2>/dev/null || true; "
+                "sleep 15; "
+                "done; exit 1",
+                "--",
+            ] + cmd
+            cmd = retry_cmd
+
         with open(log_file, "w") as lf:
             proc = subprocess.Popen(
                 cmd,
@@ -99,7 +124,7 @@ class Dispatcher:
             )
 
         if env_file:
-            threading.Timer(5.0, lambda: _safe_unlink(env_file)).start()
+            threading.Timer(120.0, lambda: _safe_unlink(env_file)).start()
 
         self.state[ticket_key] = {
             "pid": proc.pid,
@@ -228,7 +253,8 @@ class Dispatcher:
         fd, path = tempfile.mkstemp(prefix="sandbox-env-", suffix=".env")
         with os.fdopen(fd, "w") as f:
             for k, v in self._get_env_vars().items():
-                f.write(f"{k}={v}\n")
+                escaped = v.replace("'", "'\\''")
+                f.write(f"{k}='{escaped}'\n")
         os.chmod(path, 0o600)
         return path
 
