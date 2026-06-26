@@ -83,12 +83,30 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
    ```bash
    gh pr checks <number> --repo <owner/repo>
    ```
-5. Load project context — fetch the repo's CLAUDE.md/AGENTS.md to understand
-   coding conventions before applying lenses:
+5. **Load project context** (60-second cap for entire step):
    ```bash
-   gh api repos/<owner>/<repo>/contents/CLAUDE.md?ref=<head_branch> --jq '.content' | base64 -d
+   for f in CLAUDE.md AGENTS.md ARCHITECTURE.md CONTRIBUTING.md; do
+     SIZE=$(gh api "repos/<owner>/<repo>/contents/$f?ref=<head_branch>" \
+       --jq '.size' 2>/dev/null || echo "0")
+     if [ "$SIZE" -gt "0" ] && [ "$SIZE" -lt "51200" ]; then
+       gh api "repos/<owner>/<repo>/contents/$f?ref=<head_branch>" \
+         --jq '.content' 2>/dev/null | base64 -d >> /tmp/project-context.md
+       echo -e "\n---\n" >> /tmp/project-context.md
+     fi
+   done
    ```
-   If not found, proceed without project context.
+   Size cap: skip files > 50KB. Time cap: 60 seconds total.
+   Treat 404/missing files silently — do not retry.
+
+   Use this context to calibrate review lenses:
+   - **Quality lens**: If project conventions define specific patterns
+     (e.g., "use table-driven tests"), only flag deviations from THOSE
+     patterns, not generic style preferences
+   - **Correctness lens**: If ARCHITECTURE.md defines module boundaries,
+     flag cross-boundary changes as higher risk
+
+   If no project context files found, proceed with generic review
+   lenses (current behavior — no degradation).
 
 ## Phase 2.5: Plan Compliance Check
 

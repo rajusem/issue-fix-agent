@@ -278,6 +278,17 @@ fix attempt. Before proceeding to Phase 1:
 
 ## Phase 3: Investigate
 
+### Early Completion Heuristic
+
+If by ~25 tool calls into Phase 3 you have:
+- Identified a single root cause with HIGH confidence
+- Fewer than 3 files to change
+- Signal is "default" or "regression" with clear evidence
+
+Then proceed directly to Phase 4 (Root Cause Analysis). Do not
+continue exploring — diminishing returns. The Complexity Gate in
+Phase 4A will determine audit depth based on actual evidence.
+
 ### Strategy Execution Order
 
 Based on the signal classification from Phase 1 step 5:

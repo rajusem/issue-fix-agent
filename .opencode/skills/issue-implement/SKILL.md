@@ -156,6 +156,25 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    npm test
    ```
 3. If tests fail, investigate and fix. Track iterations.
+3.5. **Pre-existing failure check** — this is a DIAGNOSTIC ONLY step.
+   Before fixing a failing test, verify it's not a pre-existing failure:
+   ```bash
+   git stash
+   <same test command> 2>&1 | tee /tmp/baseline-check.log
+   BASELINE_EXIT=$?
+   git stash pop || (git checkout -- . && git stash drop)
+   ```
+   - If the test ALSO fails on the clean branch → pre-existing failure.
+     Log to Jira: "Test `<name>` fails without agent changes (pre-existing)."
+     Skip this test — do not count against pass/fail assessment.
+   - If the test passes on clean branch → agent-introduced failure.
+     Must fix before proceeding.
+   - This is DIAGNOSTIC ONLY — do NOT change your fix approach based
+     on baseline results. Record the result and proceed to the next step.
+   - This check costs 3 tool calls but only triggers on failure.
+   - If git stash pop fails (conflict from test-generated files),
+     the fallback `git checkout -- . && git stash drop` restores
+     the workspace cleanly.
 4. After 3 failed test-fix iterations, STOP and mark as failed.
 5. Post Jira milestone comment: "Tests passing."
 6. Update `.audit/validation.json` with test results.
@@ -298,8 +317,16 @@ If at any point you cannot proceed:
    ```
    ## Fix Failed
    **Phase**: <which phase failed>
+   **Failure Type**: <ENVIRONMENT|BUILD|TEST|PUSH|OTHER>
    **Attempted**: <what was tried>
    **Failure**: <what went wrong>
+
+   Classify as the FIRST matching category (precedence order):
+   - ENVIRONMENT: Token expired, tool missing, MCP unreachable, permissions
+   - BUILD: Compilation error, missing import, type mismatch
+   - TEST: Test assertion failures from agent changes
+   - PUSH: Push rejected, branch conflict, PR creation failed
+   - OTHER: Unexpected failure
 
    ---
    **Session Telemetry**
