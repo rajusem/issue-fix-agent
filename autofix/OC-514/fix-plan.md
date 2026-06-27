@@ -43,3 +43,8 @@ This is a minimal, targeted fix that:
 This change ensures that cluster administrators can successfully log in to OpenShift clusters even when there are hostname or certificate mismatches, which is particularly useful for development environments or internal clusters where custom certificates are used.
 
 The fix resolves the specific timeout issue described in GitHub issues #496 and #514.
+
+## References
+
+- GitHub Issue #496: https://github.com/openshift/oc/issues/496
+- GitHub Pull Request #514: https://github.com/openshift/oc/pull/514
