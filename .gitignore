@@ -20,6 +20,7 @@ target-repo/
 .audit/
 .session_start_time
 autofix/
+.autofix/
 __pycache__/
 .opencode/opencode.json
 
