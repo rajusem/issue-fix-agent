@@ -4,18 +4,62 @@ An automated issue-fixing system that watches Jira tickets labeled `autofix`
 and dispatches AI agents to fix bugs, review code, and manage the full
 lifecycle from ticket to merged PR.
 
-> **Runtime:** OpenCode + OpenShell on OpenShift.
-> **Model:** Qwen 3.6 35B via LiteMaaS (zero cloud credentials needed).
-> **Status:** Full E2E pipeline verified with sandbox isolation.
+> **Runtime:** OpenCode (agent runtime). OpenShell + OpenShift deployment is WIP.
+> **Model:** Claude Sonnet 4.6 (default). Also supports open models via Ollama/LiteMaaS — see Model Recommendations.
+> **Status:** E2E pipeline verified locally (7 models evaluated). OpenShell sandbox + OpenShift cluster deployment in progress.
 > See `docs/Architecture.md` for the full design.
 
 ## How It Works
 
+```mermaid
+flowchart LR
+    A["🎫 Jira<br>autofix"] --> B["👁 Watcher"]
+
+    subgraph INV["INVESTIGATE (Phases 0-4)"]
+        C["📂 Clone +<br>Root Cause"] --> D["📝 Plan +<br>3-Agent Audit"]
+    end
+
+    B --> C
+    D --> E
+
+    E["🧑 GATE 1<br>Human Plan<br>Review"]:::gate
+
+    subgraph IMPL["IMPLEMENT (Phases 5-11)"]
+        F["⚙️ Code Fix +<br>Tests +<br>Blocklist"] --> G["📤 Create PR +<br>Jira Telemetry"]
+    end
+
+    E -->|approved| F
+
+    subgraph REV["REVIEW"]
+        H["🔎 3-Lens<br>Correctness<br>Security<br>Quality"]
+        H -->|findings| I["🔧 Review Fix"]
+        I -->|"< 3 cycles"| H
+        H -->|clean| J["✅ Done"]
+    end
+
+    G --> H
+
+    J --> K["🧑 GATE 2<br>Human PR<br>Review"]:::gate
+    K -->|approved| L["🚀 Merged"]:::merged
+
+    I -->|"3 cycles"| M["⚠️ Escalate"]:::fail
+    M -.->|"bot-retry<br>(max 2x)"| B
+
+    classDef gate fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef fail fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef merged fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style INV fill:#e3f2fd,stroke:#1565c0
+    style IMPL fill:#e8f5e9,stroke:#2e7d32
+    style REV fill:#f3e5f5,stroke:#7b1fa2
+```
+
+### Step-by-step
+
 1. A user creates a Jira ticket with the `autofix` label and includes the repository URL in the description
-2. The **Watcher** (Python, Deployment loop) polls Jira every 10 min, picks up the ticket, and dispatches the **Investigation Agent** inside an OpenShell sandbox
+2. The **Watcher** (Python, Deployment loop) polls Jira every 20 min (configurable via `JIRA_POLL_INTERVAL`), picks up the ticket, and dispatches the **Investigation Agent** (locally or inside an OpenShell sandbox when deployed on cluster)
 3. The **Investigation Agent** clones the repo, investigates the issue, writes a structured fix plan, and optionally runs it through 3 independent audit sub-agents (Architecture, PE, Language Expert) for review
 4. After audit approval, the agent posts the plan to Jira and sets `bot-plan-ready` — a **human reviews and approves** the plan
-5. After human approval (`bot-plan-approved`), the Watcher dispatches the **Implementation Agent** (sandboxed) which implements the fix, runs tests, and creates a PR
+5. After human approval (`bot-plan-approved`), the Watcher dispatches the **Implementation Agent** which implements the fix, runs tests, and creates a PR
 6. The **Review Agent** reviews the PR through 3 lenses (correctness, security, quality)
 7. If the review finds issues, the **Review-Fix Agent** addresses them and sends back for re-review (max 3 cycles)
 8. When the review passes, a human approves and merges the PR
@@ -43,8 +87,6 @@ triggers concurrency analysis. Be descriptive about the problem behavior.
 **Knowledge Repo**: https://github.com/org/team-docs  (optional — cloned for context)
 ```
 
-The old `**Skill**:` (singular) format is still accepted for backward
-compatibility.
 
 ## Label State Machine
 
@@ -89,27 +131,160 @@ opencode.json         # OpenCode config — MCP servers, instructions
 AGENTS.md             # Project rules loaded into agent context
 ```
 
-## Setup
+## Quick Start — Fix a Bug Locally
 
-### Local Development
-
-- OpenCode v1.17.5+
-- `gh` CLI with `contents:write` and `pull-requests:write` permissions
-- `git` CLI
+### 1. Prerequisites
 
 ```bash
-# Single cycle (local dev)
-python -m orchestrator.watcher --dry-run
+# OpenCode (AI agent runtime)
+npm i -g opencode                        # or: curl -fsSL https://opencode.ai/install.sh | sh
+opencode --version                       # v1.17.11+
 
-# Run investigation agent manually
-opencode run --agent fix-investigate --dir /tmp "Investigate OBSINTA-123"
+# GitHub CLI (for PR creation)
+gh auth status                           # must be authenticated
+
+# Python deps (for watcher, optional)
+uv pip install -r orchestrator/requirements.txt   # or: pip install -r orchestrator/requirements.txt
+
+# Jira MCP server (for Jira integration)
+pip install mcp-atlassian                # or: uvx mcp-atlassian
 ```
 
-### OpenShift Deployment
+### 2. Set Credentials
 
-See `local-docs/setup-openshift-cluster.md` for the full step-by-step guide.
+Create a `.env` file in the project root (already gitignored):
 
-**Quick start:**
+```bash
+JIRA_USERNAME=your@email.com
+JIRA_API_TOKEN=your-jira-api-token       # https://id.atlassian.com/manage-profile/security/api-tokens
+GITHUB_TOKEN=your-github-pat             # or: gh auth token
+```
+
+### 3. Choose a Model
+
+```bash
+# Option A: Vertex AI (recommended — highest reliability)
+# Requires: gcloud auth, GOOGLE_CLOUD_PROJECT env var
+export CLAUDE_CODE_USE_VERTEX=1
+export ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project
+MODEL="google-vertex-anthropic/claude-sonnet-4-6@default"
+
+# Option B: Local Ollama (free, works offline)
+ollama serve &
+ollama pull deepseek-r1:32b              # or: gemma4:31b
+MODEL="ollama/deepseek-r1:32b"
+
+# Option C: LiteMaaS (Red Hat internal shared gateway)
+# Edit .opencode/opencode.json with your LiteMaaS API key
+MODEL="litemaas/Qwen3.6-35B-A3B"
+```
+
+### 4. Create a Jira Ticket
+
+Add the `autofix` label and include the Agent Configuration in the description:
+
+```markdown
+[Describe the bug — what's broken, steps to reproduce, expected behavior]
+
+## Agent Configuration
+**Repository**: https://github.com/your-org/your-repo
+**Branch**: main
+```
+
+### 5. Run the Agent
+
+**Option A — Single issue (manual, no watcher):**
+
+```bash
+# Source credentials
+set -a && source .env && set +a
+
+# Step 1: Investigate — produces a fix plan
+opencode run --agent fix-investigate \
+  --dangerously-skip-permissions \
+  -m $MODEL \
+  "Investigate Jira ticket YOUR-TICKET-KEY. Follow the skill."
+
+# Review the plan on GitHub (.autofix/<PROJECT>/<TICKET>/fix-plan.md)
+# Then swap label: bot-plan-ready → bot-in-progress
+
+# Step 2: Implement — creates a PR
+opencode run --agent fix-implement \
+  --dangerously-skip-permissions \
+  -m $MODEL \
+  "Implement the approved fix for YOUR-TICKET-KEY. Follow the skill."
+
+# Agent creates PR, updates Jira, swaps label to bot-ready-for-review
+```
+
+**Option B — Watcher (automated, polls Jira):**
+
+```bash
+set -a && source .env && set +a
+
+# Dry run first (no mutations)
+python -m orchestrator.watcher --dry-run
+
+# Single cycle (processes all autofix tickets once)
+python -m orchestrator.watcher
+
+# Continuous loop (polls every 20 min, SIGTERM to stop)
+python -m orchestrator.watcher --loop
+```
+
+### 6. What Happens Next
+
+```
+Investigate → Plan pushed to branch → HUMAN reviews plan → Implement →
+PR created → Review Agent (3-lens) → Review-Fix (max 3 cycles) →
+HUMAN approves PR → Merged
+```
+
+The agent updates Jira labels at each step. Check the Label State Machine
+below for details.
+
+### Notes
+
+- `--dangerously-skip-permissions` is for local/eval runs only — skips
+  interactive permission prompts. Do not use in production.
+- For non-interactive runs (CI, scripts), wrap with `script -q <logfile>`
+  to provide a PTY.
+- Clean up cloned repos after runs: `rm -rf target-repo/`
+
+## Local Development
+
+> Full guide: `local-docs/local-development-guide.md`
+
+### Model Recommendations
+
+Agent definitions default to `google-vertex-anthropic/claude-sonnet-4-6` but
+you can override at runtime with `-m`. The pipeline requires strong
+instruction-following and multi-step tool execution — not all models can
+reliably complete the full 11-phase workflow.
+
+| Provider | Model ID | Notes |
+|----------|----------|-------|
+| Vertex AI | `google-vertex-anthropic/claude-sonnet-4-6` | Recommended default — handles all issue types |
+| Vertex AI | `google-vertex-anthropic/claude-opus-4-6` | For complex or high-priority issues |
+| Ollama | `ollama/deepseek-r1:32b` | Fast local option — works for simple, well-scoped bugs |
+| Ollama Cloud | `ollama/minimax-m2.5:cloud` | Cloud-hosted open model — works for simple bugs |
+| LiteMaaS | `litemaas/Qwen3.6-35B-A3B` | Cluster-compatible — can investigate but struggles with implementation |
+| Ollama | `ollama/gemma4:31b` | Local testing only — slow inference, limited reliability |
+| Ollama | `ollama/qwen3-coder-fixed` | Not recommended — poor instruction following |
+
+> **Note:** Open models (30-35B) can often identify root causes correctly but
+> struggle with the multi-phase implementation pipeline. The bottleneck is
+> instruction following and tool-call reliability, not reasoning capability.
+> Run your own eval with `eval/run-eval.sh` to benchmark models on your issues.
+
+## OpenShift Deployment (WIP)
+
+> **Status:** Infrastructure scaffolding ready (manifests, Containerfile,
+> policies). Full E2E validation on OpenShift with OpenShell sandbox
+> isolation is in progress.
+>
+> Full guide: `local-docs/setup-openshift-cluster.md`
+
 ```bash
 # Build and push
 podman build --platform linux/amd64 -t quay.io/rzalavad/issue-fix-agent:latest .
@@ -122,18 +297,26 @@ oc apply -f manifests/
 
 ### Credentials
 
-| Credential | Stored as |
-|------------|-----------|
-| GitHub token | K8s Secret `watcher-secrets` |
-| Jira API token | K8s Secret `watcher-secrets` |
-| LiteMaaS API key | K8s Secret `litemaas-config` (in opencode.json) |
+| Credential | Where | Stored as |
+|------------|-------|-----------|
+| GitHub token | Local: `$GITHUB_TOKEN` env var | Cluster: K8s Secret `watcher-secrets` |
+| Jira API token | Local: `$JIRA_API_TOKEN` env var | Cluster: K8s Secret `watcher-secrets` |
+| LiteMaaS API key | Local: `.opencode/opencode.json` | Cluster: K8s Secret `litemaas-config` |
 
-## Adapted From
+## Documentation
 
-This project adapts skills from the [AAP SDLC Harness](https://gitlab.cee.redhat.com/aap-sdlc/harness):
+| Doc | Purpose |
+|-----|---------|
+| `docs/Architecture.md` | System design, label state machine, audit loop |
+| `local-docs/local-development-guide.md` | Detailed local setup, provider config, model selection |
+| `local-docs/setup-openshift-cluster.md` | Step-by-step cluster deployment (40 issues documented) |
+| `eval/README.md` | Model evaluation results and benchmarking scripts |
+| `local-docs/demo-token-savings.md` | Token optimization layers (RTK, Ponytail, model routing) |
+| `local-docs/learnings.md` | 40 lessons from development and deployment |
 
-- `bugfix-workflow` → `issue-fix`
-- `code-review` + `review-pr-workflow` → `issue-review`
-- `git-workflow` patterns → embedded in `issue-fix` and `review-fix`
-- `jira-integration` patterns → MCP-based Jira operations
-- `ai-attribution` → Assisted-by trailer in all commits
+## Inspired By
+
+Initial skill patterns inspired by the [AAP SDLC Harness](https://gitlab.cee.redhat.com/aap-sdlc/harness)
+(bugfix-workflow, code-review, git-workflow, jira-integration, ai-attribution).
+Skills have since been rewritten for OpenCode with structured playbooks,
+audit sub-agents, and MCP-based Jira integration.

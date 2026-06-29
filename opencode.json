@@ -24,6 +24,10 @@
         "minimax-m2.5:cloud": {
           "name": "MiniMax M2.5 (cloud)",
           "contextWindow": 200000
+        },
+        "deepseek-r1:32b": {
+          "name": "DeepSeek R1 32B",
+          "contextWindow": 131072
         }
       }
     }

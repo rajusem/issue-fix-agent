@@ -36,6 +36,9 @@ audit sub-agents AND a human reviewer.
   If it fails due to network/module errors, note "CI will validate"
   and proceed to commit. NEVER retry failed builds or debug modules.
   NEVER run `go doc`, `go list`, or `go mod download`.
+- If the Todos/Task progress tool fails or is unavailable, continue
+  without it. Track your phase progress in text output instead.
+  Never let a Todos failure stop the implementation workflow.
 
 ## Scope
 

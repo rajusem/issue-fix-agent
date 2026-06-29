@@ -9,7 +9,11 @@
       "Glob(*)",
       "Task(*)",
       "external_directory(/tmp/*)",
-      "external_directory(/var/*)"
+      "external_directory(/var/*)",
+      "external_directory(/Users/rzalavad/.gvm/*)",
+      "external_directory(/Users/rzalavad/go/*)",
+      "external_directory(/Users/rzalavad/.cache/*)",
+      "Todos(*)"
     ]
   }
 }

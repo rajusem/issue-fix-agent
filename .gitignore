@@ -11,6 +11,18 @@
 # Local working docs (not committed)
 local-docs/
 
+# Eval — only track README.md
+eval/*
+!eval/README.md
+
+# Agent runtime artifacts
+target-repo/
+.audit/
+.session_start_time
+autofix/
+__pycache__/
+.opencode/opencode.json
+
 # Orchestrator runtime artifacts
 orchestrator/state/dispatch_state.json
 orchestrator/logs/
