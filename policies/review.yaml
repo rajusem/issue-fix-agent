@@ -65,6 +65,10 @@ network_policies:
         port: 443
         protocol: rest
         access: full
+      - host: oauth2.googleapis.com
+        port: 443
+        protocol: rest
+        access: full
     binaries:
       - path: /**
 
