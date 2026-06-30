@@ -39,9 +39,22 @@ class Config:
     dry_run: bool
     sandbox_enabled: bool
     plan_in_pr: bool
+    deploy_mode: str
+    fork_mode: bool
     slack_webhook_url: str | None
     watcher_ttl: int
     jira_poll_interval: int
+
+
+def _detect_deploy_mode() -> str:
+    explicit = os.environ.get("DEPLOY_MODE")
+    if explicit:
+        return explicit
+    if os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return "openshift+openshell"
+    if os.environ.get("SANDBOX_ENABLED", "false").lower() == "true":
+        return "local+openshell"
+    return "local"
 
 
 def load_config(base_dir: Path | None = None) -> Config:
@@ -91,6 +104,8 @@ def load_config(base_dir: Path | None = None) -> Config:
         dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
         sandbox_enabled=os.environ.get("SANDBOX_ENABLED", "false").lower() == "true",
         plan_in_pr=os.environ.get("PLAN_IN_PR", "true").lower() == "true",
+        deploy_mode=_detect_deploy_mode(),
+        fork_mode=os.environ.get("FORK_MODE", "false").lower() == "true",
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
         watcher_ttl=int(os.environ.get("WATCHER_SESSION_TTL", "15")),
         jira_poll_interval=int(os.environ.get("JIRA_POLL_INTERVAL", "20")),

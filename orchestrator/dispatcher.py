@@ -233,6 +233,8 @@ class Dispatcher:
             "ANTHROPIC_VERTEX_PROJECT_ID": os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", ""),
             "VERTEX_LOCATION": os.environ.get("VERTEX_LOCATION", ""),
             "PLAN_IN_PR": str(self.config.plan_in_pr).lower(),
+            "DEPLOY_MODE": self.config.deploy_mode,
+            "FORK_MODE": str(self.config.fork_mode).lower(),
         }
         litemaas = self._read_litemaas_config()
         if litemaas:

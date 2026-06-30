@@ -330,6 +330,7 @@ If any check fails, either remove the finding or downgrade to Observation.
    | Metric | Value |
    |--------|-------|
    | Model | <model from session context> |
+   | Environment | <DEPLOY_MODE from prompt context> |
    | Duration | <elapsed_min>m |
    ```
 

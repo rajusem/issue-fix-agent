@@ -226,29 +226,60 @@ fix attempt. Before proceeding to Phase 1:
 
 ## Phase 2: Prepare
 
-1. Check if the repo is already cloned (platform may auto-clone):
-   ```bash
-   ls -la  # Check if repo files exist in workspace
-   ```
-   If not cloned, clone manually with protocol restrictions:
+1. Check `${FORK_MODE:-false}` to determine clone strategy:
+
+   **If `false` (default):** Clone directly from the repo URL in the ticket:
    ```bash
    git -c protocol.ext.allow=never -c protocol.file.allow=never \
      clone -- <repo_url> work && cd work
    ```
-2. **Harden git config** — run unconditionally regardless of how the repo
-   was cloned (auto-clone or manual). This prevents execution of
-   malicious hooks and monitors from the target repository:
+
+   **If `true`:** Fork the upstream repo to the GITHUB_TOKEN owner's account:
+   ```bash
+   FORK_OWNER=$(gh api user --jq .login)
+   UPSTREAM_URL="<repo_url from ticket>"
+   REPO_NAME=$(basename "$UPSTREAM_URL")
+   UPSTREAM_OWNER=$(basename "$(dirname "$UPSTREAM_URL")")
+
+   # Check if fork exists, create if not
+   if ! gh repo view "$FORK_OWNER/$REPO_NAME" >/dev/null 2>&1; then
+     gh repo fork "$UPSTREAM_OWNER/$REPO_NAME" --clone=false
+     # Poll until fork is provisioned (max 60s)
+     for i in $(seq 1 12); do
+       gh repo view "$FORK_OWNER/$REPO_NAME" >/dev/null 2>&1 && break
+       sleep 5
+     done
+     if ! gh repo view "$FORK_OWNER/$REPO_NAME" >/dev/null 2>&1; then
+       echo "ERROR: Fork provisioning timeout"
+       # Follow Failure Protocol
+     fi
+   else
+     # Sync existing fork from upstream
+     gh repo sync "$FORK_OWNER/$REPO_NAME" --branch <base-branch>
+   fi
+
+   # Clone the FORK (not upstream)
+   git -c protocol.ext.allow=never -c protocol.file.allow=never \
+     clone -- "https://github.com/$FORK_OWNER/$REPO_NAME" work && cd work
+
+   # Add upstream as read-only remote
+   git remote add upstream "$UPSTREAM_URL"
+   ```
+
+2. **Harden git config** — run unconditionally:
    ```bash
    git config core.hooksPath /dev/null
    git config core.fsmonitor false
    ```
-   Note: this disables the repo's native git hooks, NOT the `pre-commit`
-   framework. The implementation agent's `pre-commit run --all-files`
-   uses the pre-commit framework which is independent of `core.hooksPath`.
 3. Determine base branch (from ticket `**Branch**:` field or repo default).
-   If a branch is specified, checkout that branch first:
+   If a branch is specified, checkout that branch:
    ```bash
+   # FORK_MODE=false: fetch from origin
    git fetch origin <branch> && git checkout <branch>
+
+   # FORK_MODE=true: fetch from upstream, track upstream branch
+   git fetch upstream <branch>
+   git checkout -b <branch> upstream/<branch>
    ```
 4. Create fix branch FROM the base branch — deterministic, no confirmation:
    ```bash
@@ -256,6 +287,8 @@ fix attempt. Before proceeding to Phase 1:
    BRANCH=$(echo "${TICKET_KEY}/${SUMMARY_SLUG}" | head -c 60 | sed 's/-$//')
    git checkout -b "$BRANCH"
    ```
+   In FORK_MODE=true, all pushes go to `origin` (= the fork).
+   `upstream` is read-only (for fetch/rebase only).
 5. Post Jira milestone comment: "Branch `$BRANCH` created."
 6. **Knowledge Repo Clone** (if a valid Knowledge Repo URL was parsed
    in Phase 1):
@@ -535,7 +568,7 @@ audit-skipped, and audit-loop-approved).
 
    Investigation complete. Plan awaiting human approval.
 
-   Assisted-by: Claude Code / <model version> (Anthropic)"
+   Assisted-by: OpenCode / <model version>"
    git push -u origin "$BRANCH"
    ```
    Then post a Jira comment with a link to the plan:
@@ -552,6 +585,14 @@ audit-skipped, and audit-loop-approved).
    You may edit `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` on the branch before approving — the
    implementation agent will use the latest version.
    **To reject:** Add label `bot-fix-failed` and comment with your reason.
+
+   ---
+   **Session Telemetry**
+   | Metric | Value |
+   |--------|-------|
+   | Model | <model from session context> |
+   | Environment | <DEPLOY_MODE from prompt context> |
+   | Duration | <elapsed_min>m |
    ```
 
    **If `PLAN_IN_PR=false`:** Do NOT `git add .autofix/`. Push the
@@ -559,7 +600,7 @@ audit-skipped, and audit-loop-approved).
    ```bash
    git commit --allow-empty -m "chore: create fix branch for <TICKET-KEY>
 
-   Assisted-by: Claude Code / <model version> (Anthropic)"
+   Assisted-by: OpenCode / <model version>"
    git push -u origin "$BRANCH"
    ```
    Then post a Jira comment with the FULL plan content (not a link):
@@ -576,6 +617,14 @@ audit-skipped, and audit-loop-approved).
    or post a new `## Fix Plan (Revised)` comment. The implementation agent
    will use the most recent plan comment.
    **To reject:** Add label `bot-fix-failed` and comment with your reason.
+
+   ---
+   **Session Telemetry**
+   | Metric | Value |
+   |--------|-------|
+   | Model | <model from session context> |
+   | Environment | <DEPLOY_MODE from prompt context> |
+   | Duration | <elapsed_min>m |
    ```
 4. Swap labels: remove `bot-in-progress`, add `bot-plan-ready`
 5. Verify the label swap succeeded (re-fetch ticket)

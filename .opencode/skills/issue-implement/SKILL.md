@@ -58,11 +58,23 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    - **Branch** (required — base branch)
 5. Find the fix branch from Jira comments: look for the most recent
    `## Fix Plan` comment — it contains the branch name.
-6. Clone the repository on the fix branch (the investigation agent
-   already pushed it):
+6. Clone the repository on the fix branch. Check `${FORK_MODE:-false}`:
+
+   **If `false` (default):** Clone directly from the ticket's repo URL:
    ```bash
    git clone --depth=50 --branch <fix-branch> <repo_url> .
    ```
+
+   **If `true`:** The fix branch is on the FORK, not upstream. Compute
+   the fork URL from the upstream URL:
+   ```bash
+   FORK_OWNER=$(gh api user --jq .login)
+   REPO_NAME=$(basename "<repo_url>")   # e.g., "obs-mcp"
+   git clone --depth=50 --branch <fix-branch> \
+     "https://github.com/$FORK_OWNER/$REPO_NAME" .
+   git remote add upstream <repo_url>   # upstream is read-only
+   ```
+
 7. Harden git config:
    ```bash
    git config core.hooksPath /dev/null
@@ -229,7 +241,7 @@ Replace `<model version>` with the model reported by the runtime.
    Root cause: <what was wrong>
    Fix: <what was changed and why>
 
-   Assisted-by: Claude Code / <model version> (Anthropic)
+   Assisted-by: OpenCode / <model version>
    EOF
    )"
    ```
@@ -237,7 +249,9 @@ Replace `<model version>` with the model reported by the runtime.
    ```bash
    git push -u origin "$BRANCH"
    ```
-3. Create PR:
+3. Create PR. Check `${FORK_MODE:-false}`:
+
+   **If `false` (default):**
    ```bash
    gh pr create \
      --title "fix(<component>): <summary>" \
@@ -261,7 +275,25 @@ Replace `<model version>` with the model reported by the runtime.
    [<TICKET-KEY>](https://<JIRA_SITE>/browse/<TICKET-KEY>)
 
    ---
-   Assisted-by: Claude Code / <model version> (Anthropic)
+   Environment: <DEPLOY_MODE from prompt context>
+   Assisted-by: OpenCode / <model version>
+   EOF
+   )"
+   ```
+
+   **If `true` (fork mode):** Create cross-repo PR from fork to upstream:
+   ```bash
+   FORK_OWNER=$(gh api user --jq .login)
+   UPSTREAM_OWNER=$(basename "$(dirname "<repo_url>")")
+   REPO_NAME=$(basename "<repo_url>")
+   gh pr create \
+     --repo "$UPSTREAM_OWNER/$REPO_NAME" \
+     --head "$FORK_OWNER:$BRANCH" \
+     --base <base-branch> \
+     --title "fix(<component>): <summary>" \
+     --body "$(cat <<'EOF'
+   <!-- issue-fix-agent:jira=<TICKET-KEY> session=$OPENCODE_SESSION_ID -->
+   <same PR body as above>
    EOF
    )"
    ```
@@ -295,6 +327,7 @@ Replace `<model version>` with the model reported by the runtime.
    | Metric | Value |
    |--------|-------|
    | Model | <model from session context> |
+   | Environment | <DEPLOY_MODE from prompt context> |
    | Session type | implement |
    | Duration | <ELAPSED_MIN>m |
    | Audit | <from investigation session — reference plan comment> |
@@ -349,6 +382,7 @@ If at any point you cannot proceed:
    | Metric | Value |
    |--------|-------|
    | Model | <model> |
+   | Environment | <DEPLOY_MODE from prompt context> |
    | Session type | implement |
    | Duration | <ELAPSED_MIN>m |
    | Phase reached | <last phase completed> |

@@ -95,14 +95,24 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 ## Phase 3: Clone and Checkout
 
-1. Check if repo is already cloned (platform may auto-clone).
-   If not cloned, clone first with protocol restrictions:
+1. Clone the repo. Check `${FORK_MODE:-false}`:
+
+   **If `false` (default):** Clone from the PR's repo URL:
    ```bash
    git -c protocol.ext.allow=never -c protocol.file.allow=never \
      clone -- <repo_url> work && cd work
    ```
-2. **Harden git config** — run BEFORE checkout to prevent hook execution
-   during the checkout process:
+
+   **If `true`:** Clone from the FORK (the PR's head repo):
+   ```bash
+   FORK_OWNER=$(gh api user --jq .login)
+   REPO_NAME=$(basename "<repo_url>")
+   git -c protocol.ext.allow=never -c protocol.file.allow=never \
+     clone -- "https://github.com/$FORK_OWNER/$REPO_NAME" work && cd work
+   git remote add upstream <repo_url>   # upstream for rebase
+   ```
+
+2. **Harden git config** — run BEFORE checkout:
    ```bash
    git config core.hooksPath /dev/null
    git config core.fsmonitor false
@@ -123,8 +133,13 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
    ```
    - If "CONFLICTING": attempt rebase onto base branch:
      ```bash
+     # FORK_MODE=false: rebase from origin
      git fetch origin <base_branch>
      git rebase origin/<base_branch>
+
+     # FORK_MODE=true: rebase from upstream (origin = fork, may be stale)
+     git fetch upstream <base_branch>
+     git rebase upstream/<base_branch>
      ```
      If rebase succeeds, continue to Phase 4.
      If rebase fails (conflicts too complex), follow Failure Protocol
@@ -215,7 +230,7 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    - <finding 1>: <what was fixed>
    - <finding 2>: <what was fixed>
 
-   Assisted-by: Claude Code / <model version> (Anthropic)
+   Assisted-by: OpenCode / <model version>
    EOF
    )"
    ```
@@ -243,6 +258,7 @@ Replace `<model version>` with the model reported by the runtime (e.g.,
    | Metric | Value |
    |--------|-------|
    | Model | <model from session context> |
+   | Environment | <DEPLOY_MODE from prompt context> |
    | Duration | <elapsed_min>m |
    ```
 

@@ -34,7 +34,7 @@ Follow the `review-fix` skill (`.opencode/skills/review-fix/SKILL.md`).
 
 All commits must include the trailer:
 ```
-Assisted-by: Claude Code / <model version> (Anthropic)
+Assisted-by: OpenCode / <model version>
 ```
 
 ## Key Constraints

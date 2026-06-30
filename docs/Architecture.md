@@ -631,6 +631,7 @@ Agent-specific models are configured in `.opencode/agents/*.md` via the
 | `MAX_FIX_RETRIES` | 2 | Max retry attempts for failed fixes (user adds bot-retry) |
 | `RTK_ENABLED` | false | RTK token optimization (opt-in) |
 | `PLAN_IN_PR` | true | See PLAN_IN_PR Flag section above |
+| `FORK_MODE` | false | `false`: push to ticket's repo directly. `true`: fork to token owner, cross-repo PR |
 | `AUDIT_ENABLED` | true | Master switch for design audit loop |
 | `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
 | `AUDIT_SKIP_SIMPLE` | true | Skip audit for simple fixes |

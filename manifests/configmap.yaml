@@ -30,6 +30,8 @@ data:
     SANDBOX_ENABLED=true
     RTK_ENABLED=false
     PLAN_IN_PR=true
+    # DEPLOY_MODE=openshift+openshell  # auto-detected, override if needed
+    FORK_MODE=false
   projects.json: |
     {
       "watched_projects": ["OBSINTA"],

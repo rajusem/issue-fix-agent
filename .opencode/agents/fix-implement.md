@@ -62,7 +62,7 @@ Follow the `issue-implement` skill (`.opencode/skills/issue-implement/SKILL.md`)
 
 All commits must include the trailer:
 ```
-Assisted-by: Claude Code / <model version> (Anthropic)
+Assisted-by: OpenCode / <model version>
 ```
 
 ## Key Constraints
