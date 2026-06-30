@@ -98,7 +98,10 @@ flowchart LR
 | `bot-review-complete` | Agent review passed, awaiting human approval |
 | `bot-merged` | PR merged, ticket ready for manual close |
 | `bot-fix-failed` | Agent could not fix — needs human attention |
+| `bot-missing-info` | Ticket missing required info — bot re-checks each cycle |
 | `bot-retry` | Retry — user adds to `bot-fix-failed` ticket to trigger re-processing (max 2) |
+| `bot-cancelled` | Human override — stops active sessions, returns ticket to failed state |
+| `no-autofix` | Opt-out — ticket excluded from automation |
 
 ## Model Recommendations
 
@@ -147,6 +150,7 @@ AGENTS.md             # Project rules loaded into agent context
 | [docs/deploy-openshift.md](docs/deploy-openshift.md) | OpenShift cluster deployment + OpenShell |
 | [docs/Architecture.md](docs/Architecture.md) | System design, label state machine, audit loop |
 | [eval/README.md](eval/README.md) | Model evaluation results and benchmarking |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute — code standards, workflow, review process |
 
 ## Inspired By
 
