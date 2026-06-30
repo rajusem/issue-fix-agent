@@ -38,6 +38,7 @@ class Config:
     rtk_enabled: bool
     dry_run: bool
     sandbox_enabled: bool
+    plan_in_pr: bool
     slack_webhook_url: str | None
     watcher_ttl: int
     jira_poll_interval: int
@@ -89,6 +90,7 @@ def load_config(base_dir: Path | None = None) -> Config:
         rtk_enabled=os.environ.get("RTK_ENABLED", "false").lower() == "true",
         dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
         sandbox_enabled=os.environ.get("SANDBOX_ENABLED", "false").lower() == "true",
+        plan_in_pr=os.environ.get("PLAN_IN_PR", "true").lower() == "true",
         slack_webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
         watcher_ttl=int(os.environ.get("WATCHER_SESSION_TTL", "15")),
         jira_poll_interval=int(os.environ.get("JIRA_POLL_INTERVAL", "20")),

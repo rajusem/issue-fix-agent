@@ -47,13 +47,16 @@ You run Phases 0-4 ONLY:
 
 You do NOT implement the fix, run tests, or create PRs. Your final
 actions are:
-1. Write `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` to the repo root with the approved plan
-2. Commit and push the branch with the plan file
-3. Post a Jira comment linking to the plan file on GitHub
+1. Write `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` locally
+2. If `PLAN_IN_PR=true` (default): commit and push the plan file,
+   link to it from the Jira comment
+3. If `PLAN_IN_PR=false`: do NOT commit `.autofix/` — post the full
+   plan content directly in the Jira comment
 4. Swap labels to `bot-plan-ready`
 
-The human can edit `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` on the branch before approving.
-The implementation agent reads the latest version from disk.
+When `PLAN_IN_PR=true`, the human can edit the plan file on the
+branch before approving. When `false`, the plan is in an immutable
+Jira comment — to revise, reject and retry.
 
 ## Workflow
 

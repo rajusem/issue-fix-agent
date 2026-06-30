@@ -43,8 +43,10 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
 
 1. **Jira ticket accessible** — fetch via `atlassian_jira_get_issue`
 2. **`bot-in-progress` label present** — if not, add it
-3. **Approved plan exists** — the investigation agent pushed a branch
-   with `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` in the repo root
+3. **Approved plan exists** — the investigation agent either pushed a
+   branch with `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` (when
+   `PLAN_IN_PR=true`) or posted the full plan in a Jira comment (when
+   `PLAN_IN_PR=false`)
 
 ## Phase 5: Read Approved Plan and Prepare
 
@@ -55,15 +57,12 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    - **Repository URL** (required)
    - **Branch** (required — base branch)
 5. Find the fix branch from Jira comments: look for the most recent
-   `## Fix Plan` comment — it contains the branch name and a link
-   to `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md`
+   `## Fix Plan` comment — it contains the branch name.
 6. Clone the repository on the fix branch (the investigation agent
    already pushed it):
    ```bash
    git clone --depth=50 --branch <fix-branch> <repo_url> .
    ```
-   The fix branch already exists on remote — the investigation agent
-   created and pushed it with `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md`.
 7. Harden git config:
    ```bash
    git config core.hooksPath /dev/null
@@ -71,13 +70,22 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    git config user.email "issue-fix-agent@bot.local"
    git config user.name "issue-fix-agent"
    ```
-8. Read the approved plan from disk:
+8. Read the approved plan. Check `${PLAN_IN_PR:-true}`:
+
+   **If `true` (default):** Read from disk:
    ```bash
    cat .autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md
    ```
-   Extract Root Cause, Approach, and Planned Files sections. This file
-   may have been edited by a human reviewer — always use the latest
-   version on the branch.
+   This file may have been edited by a human reviewer — always use
+   the latest version on the branch.
+
+   **If `false`:** Read from Jira. Use `atlassian_jira_get_issue` to
+   fetch comments. Find the LAST (most recent) comment containing
+   `## Fix Plan` and plan sections (Root Cause, Approach, Files to
+   Change). If multiple `## Fix Plan` comments exist (from retries),
+   always use the last one. Extract the plan content from that comment.
+
+   In both cases, extract Root Cause, Approach, and Planned Files.
 9. Set the branch name for later use:
    ```bash
    BRANCH=$(git branch --show-current)
@@ -195,10 +203,18 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
 
 Replace `<model version>` with the model reported by the runtime.
 
-0. **Keep `.autofix/` in the commit.** The plan file stays in the repo
-   as a permanent audit trail. Do NOT delete it. Include it in the PR
-   so reviewers can see both the approved plan and the implementation.
-   Stage the `.autofix/` directory alongside the fix:
+0. **`.autofix/` handling** — check `${PLAN_IN_PR:-true}`:
+
+   **If `true` (default):** Keep `.autofix/` in the commit as a permanent
+   audit trail. Include it in the PR so reviewers can see the approved
+   plan alongside the implementation. Stage it:
+   ```bash
+
+   **If `false`:** Do NOT stage `.autofix/`. The plan is in the Jira
+   comment, not in the PR. Skip `git add .autofix/` and proceed to
+   step 1.
+
+   Stage the `.autofix/` directory (Mode 1 only):
    ```bash
    git add .autofix/
    ```

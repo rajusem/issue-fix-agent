@@ -523,9 +523,12 @@ audit-skipped, and audit-loop-approved).
    ```
    Write the plan to `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md`. Use the enriched
    format with Root Cause, Approach, Planned Files, and Audit Trail
-   sections. This file is the implementation specification — the
-   implementation agent reads it from disk.
-2. Commit and push the plan file:
+   sections. This file is ALWAYS written locally regardless of
+   `PLAN_IN_PR` setting.
+
+2. Check `${PLAN_IN_PR:-true}` to decide how to publish the plan:
+
+   **If `PLAN_IN_PR=true` (default):** Commit and push the plan file:
    ```bash
    git add .autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md
    git commit -m "docs: add fix plan for <TICKET-KEY>
@@ -535,7 +538,7 @@ audit-skipped, and audit-loop-approved).
    Assisted-by: Claude Code / <model version> (Anthropic)"
    git push -u origin "$BRANCH"
    ```
-3. Post a Jira comment with a summary and link to the plan file:
+   Then post a Jira comment with a link to the plan:
    ```
    ## Fix Plan (APPROVED, awaiting human review)
 
@@ -548,6 +551,30 @@ audit-skipped, and audit-loop-approved).
    **To authorize implementation:** Add label `bot-proceed` to this ticket.
    You may edit `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` on the branch before approving — the
    implementation agent will use the latest version.
+   **To reject:** Add label `bot-fix-failed` and comment with your reason.
+   ```
+
+   **If `PLAN_IN_PR=false`:** Do NOT `git add .autofix/`. Push the
+   branch without the plan file:
+   ```bash
+   git commit --allow-empty -m "chore: create fix branch for <TICKET-KEY>
+
+   Assisted-by: Claude Code / <model version> (Anthropic)"
+   git push -u origin "$BRANCH"
+   ```
+   Then post a Jira comment with the FULL plan content (not a link):
+   ```
+   ## Fix Plan (APPROVED, awaiting human review)
+
+   **Branch**: <BRANCH>
+   **Confidence**: HIGH/MEDIUM/LOW
+
+   <paste the entire fix-plan.md content here>
+
+   **To authorize implementation:** Add label `bot-proceed` to this ticket.
+   **To revise the plan:** Edit this comment in Jira (click ... → Edit),
+   or post a new `## Fix Plan (Revised)` comment. The implementation agent
+   will use the most recent plan comment.
    **To reject:** Add label `bot-fix-failed` and comment with your reason.
    ```
 4. Swap labels: remove `bot-in-progress`, add `bot-plan-ready`

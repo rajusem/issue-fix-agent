@@ -202,16 +202,17 @@ class Dispatcher:
         run_dir = str(RUNS_DIR / run_id)
         os.makedirs(run_dir, exist_ok=True)
 
-        result = subprocess.run(
-            ["openshell", "sandbox", "download", sandbox_name,
-             "/sandbox/.autofix", f"{run_dir}/.autofix"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode != 0:
-            log.warning("Artifact download failed for %s: %s",
-                        sandbox_name, result.stderr.strip())
-        else:
-            log.info("Artifacts extracted for %s to %s", ticket_key, run_dir)
+        if self.config.plan_in_pr:
+            result = subprocess.run(
+                ["openshell", "sandbox", "download", sandbox_name,
+                 "/sandbox/.autofix", f"{run_dir}/.autofix"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                log.warning("Artifact download failed for %s: %s",
+                            sandbox_name, result.stderr.strip())
+            else:
+                log.info("Artifacts extracted for %s to %s", ticket_key, run_dir)
 
         try:
             subprocess.run(
@@ -231,6 +232,7 @@ class Dispatcher:
             "GOOGLE_CLOUD_PROJECT": os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
             "ANTHROPIC_VERTEX_PROJECT_ID": os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", ""),
             "VERTEX_LOCATION": os.environ.get("VERTEX_LOCATION", ""),
+            "PLAN_IN_PR": str(self.config.plan_in_pr).lower(),
         }
         litemaas = self._read_litemaas_config()
         if litemaas:

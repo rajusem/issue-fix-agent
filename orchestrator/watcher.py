@@ -255,7 +255,8 @@ def phase_plan_approval(
         prompt = (
             f"Implement the approved fix plan for {ticket.key}. "
             f"Follow the issue-implement skill. "
-            f"Jira Site: {config.jira_site}"
+            f"Jira Site: {config.jira_site}. "
+            f"PLAN_IN_PR: {config.plan_in_pr}"
         )
         dispatcher.dispatch(
             ticket.key, "fix-implement", prompt, config.implement_ttl,
@@ -707,6 +708,7 @@ def _build_investigate_prompt(ticket, config: Config) -> str:
         f"AUDIT_SKIP_SIMPLE: {config.audit_skip_simple}",
         f"AUDIT_MODEL: {config.audit_model}",
         f"RTK_ENABLED: {config.rtk_enabled}",
+        f"PLAN_IN_PR: {config.plan_in_pr}",
         f"Jira Site: {config.jira_site}",
     ]
     return "\n".join(parts)

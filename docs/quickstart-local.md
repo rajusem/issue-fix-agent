@@ -86,6 +86,9 @@ opencode run --agent fix-implement \
 # Agent creates PR, updates Jira, swaps label to bot-ready-for-review
 ```
 
+**Plan file behavior** — set `PLAN_IN_PR=false` to keep plan files out of
+PRs (plan posted in Jira comment instead). See README Configuration table.
+
 **Option B — Watcher (automated, polls Jira):**
 
 ```bash

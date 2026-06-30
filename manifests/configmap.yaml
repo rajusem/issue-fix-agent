@@ -29,6 +29,7 @@ data:
     DRY_RUN=false
     SANDBOX_ENABLED=true
     RTK_ENABLED=false
+    PLAN_IN_PR=true
   projects.json: |
     {
       "watched_projects": ["OBSINTA"],

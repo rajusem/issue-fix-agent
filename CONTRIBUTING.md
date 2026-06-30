@@ -144,6 +144,12 @@ Currently no automated test suite. Test manually:
 2. **Watcher changes**: Run `python -m orchestrator.watcher --dry-run`
 3. **Policy changes**: Run `openshell sandbox create --policy <policy> -- <command>`
 
+### PLAN_IN_PR Flag
+
+When testing skills that handle `.autofix/` plan files, test both modes:
+- `PLAN_IN_PR=true`: plan committed to branch, included in PR
+- `PLAN_IN_PR=false`: plan in Jira comment only, not in PR
+
 ### Model Evaluation
 
 For skill or agent changes that affect model behavior:

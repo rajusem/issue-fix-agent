@@ -398,6 +398,16 @@ Plan v1 | Iteration 0 (initial draft)
 The approved plan is persisted to `.audit/approved-plan.md` in the
 workspace so Phase 5 can read it even after context compaction.
 
+### PLAN_IN_PR Flag
+
+Controlled by `PLAN_IN_PR` env var (default: `true`):
+- **`true`**: Plan committed to `.autofix/` on the fix branch, included
+  in the PR as audit trail. Linked from Jira comment. Human can edit
+  the plan file on the branch before approving.
+- **`false`**: Plan NOT committed to the branch. Full plan content posted
+  directly in the Jira comment. Implement agent reads plan from Jira
+  instead of disk. Plan is immutable (Jira comments cannot be edited).
+
 ## Label State Machine
 
 Labels on Jira tickets drive the entire workflow. Each label represents
@@ -620,6 +630,7 @@ Agent-specific models are configured in `.opencode/agents/*.md` via the
 | `REVIEW_FIX_MAX_CYCLES` | 3 | Max review-fix iterations |
 | `MAX_FIX_RETRIES` | 2 | Max retry attempts for failed fixes (user adds bot-retry) |
 | `RTK_ENABLED` | false | RTK token optimization (opt-in) |
+| `PLAN_IN_PR` | true | See PLAN_IN_PR Flag section above |
 | `AUDIT_ENABLED` | true | Master switch for design audit loop |
 | `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
 | `AUDIT_SKIP_SIMPLE` | true | Skip audit for simple fixes |

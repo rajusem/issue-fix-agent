@@ -103,6 +103,20 @@ flowchart LR
 | `bot-cancelled` | Human override — stops active sessions, returns ticket to failed state |
 | `no-autofix` | Opt-out — ticket excluded from automation |
 
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PLAN_IN_PR` | `true` | `true`: plan committed to branch + PR as audit trail. `false`: plan posted in Jira comment only, not in PR. |
+| `JIRA_POLL_INTERVAL` | `20` | Minutes between watcher polling cycles |
+| `MAX_FIX_RETRIES` | `2` | Max retry attempts when human adds `bot-retry` |
+| `REVIEW_FIX_MAX_CYCLES` | `3` | Max review-fix iterations before escalation |
+| `AUDIT_ENABLED` | `true` | Enable 3-agent audit loop for fix plans |
+| `DRY_RUN` | `false` | Watcher polls Jira but makes no mutations |
+| `SANDBOX_ENABLED` | `false` | Dispatch agents in OpenShell sandboxes |
+
+Full config reference: [docs/Architecture.md](docs/Architecture.md) → config.env section.
+
 ## Model Recommendations
 
 | Provider | Model ID | Notes |
