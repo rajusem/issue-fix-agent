@@ -1,6 +1,6 @@
 ---
-description: "Implementation agent — implements pre-approved fix plans,
-  runs tests, creates PRs. Dispatched after human plan approval."
+description: "Use when a fix plan has been approved by human review.
+  Implementation agent — implements the plan, runs tests, creates PRs."
 model: google-vertex-anthropic/claude-opus-4-6@default
 steps: 200
 permission:

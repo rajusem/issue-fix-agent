@@ -1,6 +1,7 @@
 ---
-description: "Architecture audit sub-agent — reviews fix plans for
-  structural fit, dependency impact, scope creep."
+description: "Use when the investigation agent needs a fix plan reviewed.
+  Architecture audit sub-agent — reviews for structural fit, dependency
+  impact, scope creep."
 model: google-vertex-anthropic/claude-sonnet-4-6@default
 mode: subagent
 permission:

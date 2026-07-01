@@ -1,6 +1,7 @@
 ---
-description: "Review agent — reviews PRs through 3 lenses (correctness,
-  security, quality). NEVER approves PRs."
+description: "Use when a PR is ready for agent review (bot-ready-for-review).
+  Reviews PRs through 3 lenses (correctness, security, quality).
+  NEVER approves PRs."
 model: google-vertex-anthropic/claude-sonnet-4-6@default
 permission:
   read: allow

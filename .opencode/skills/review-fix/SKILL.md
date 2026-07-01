@@ -180,7 +180,8 @@ Track which findings were addressed and which were skipped
 
 ## Phase 5: Test
 
-1. Run the test suite (targeted tests if possible):
+1. Run targeted tests covering the changed files. If no targeted tests
+   can be identified from the file paths, fall back to the full suite:
    ```bash
    make test-unit || go test ./... || pytest || npm test
    ```

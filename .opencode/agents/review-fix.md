@@ -1,6 +1,6 @@
 ---
-description: "Review-fix agent — addresses code review findings, pushes
-  to same branch. Max 3 cycles."
+description: "Use when the review agent found issues in a PR.
+  Addresses code review findings, pushes fixes to same branch. Max 3 cycles."
 model: google-vertex-anthropic/claude-opus-4-6@default
 permission:
   read: allow

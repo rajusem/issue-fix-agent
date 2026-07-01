@@ -1,6 +1,7 @@
 ---
-description: "Language expert audit sub-agent — reviews fix plans for
-  idiomatic patterns, common pitfalls, language-specific best practices."
+description: "Use when the investigation agent needs a fix plan reviewed.
+  Language expert audit sub-agent — reviews for idiomatic patterns,
+  common pitfalls, language-specific best practices."
 model: google-vertex-anthropic/claude-sonnet-4-6@default
 mode: subagent
 permission:

@@ -1,6 +1,7 @@
 ---
-description: "PE audit sub-agent — reviews fix plans for deployment
-  safety, observability, configuration, and rollback."
+description: "Use when the investigation agent needs a fix plan reviewed.
+  PE audit sub-agent — reviews for deployment safety, observability,
+  configuration, and rollback."
 model: google-vertex-anthropic/claude-sonnet-4-6@default
 mode: subagent
 permission:

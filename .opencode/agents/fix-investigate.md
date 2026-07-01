@@ -1,7 +1,7 @@
 ---
-description: "Investigation agent — investigates bugs, writes fix plans,
-  runs 3-auditor review. Posts approved plan for human review. Does NOT
-  implement fixes or create PRs."
+description: "Use when a Jira ticket with autofix label needs investigation.
+  Investigates bugs, writes fix plans, runs 3-auditor review. Posts
+  approved plan for human review. Does NOT implement fixes or create PRs."
 model: google-vertex-anthropic/claude-opus-4-6@default
 steps: 200
 permission:
