@@ -235,6 +235,8 @@ fix attempt. Before proceeding to Phase 1:
 
 6. **Post session started comment** — post a SINGLE Jira comment with
    session context AND signal classification (from step 5 above):
+   Wrap any text containing ticket keys (branch names, file paths)
+   in backtick code to prevent Jira auto-linking.
    ```
    ## Agent Session Started
    Investigation agent has started working on this ticket.
@@ -594,18 +596,22 @@ audit-skipped, and audit-loop-approved).
    Assisted-by: OpenCode / <model version>"
    git push -u origin "$BRANCH"
    ```
-   Then post a Jira comment with a link to the plan:
+   Then post a Jira comment with a link to the plan.
+
+   Wrap branch names and file paths in backtick code to prevent
+   Jira auto-linking ticket keys.
+
    ```
    ## Fix Plan (APPROVED, awaiting human review)
 
-   **Plan file**: [.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md](<github_url>/blob/<BRANCH>/.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md)
-   **Branch**: <BRANCH>
+   **Plan file**: [View on GitHub](<github_url>/blob/<BRANCH>/.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md)
+   **Branch**: [View on GitHub](<github_url>/tree/<BRANCH>)
    **Confidence**: HIGH/MEDIUM/LOW
 
    <1-2 sentence summary of root cause and approach>
 
    **To authorize implementation:** Add label `bot-plan-approved` to this ticket.
-   You may edit `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` on the branch before approving — the
+   You may edit the plan file on the branch before approving — the
    implementation agent will use the latest version.
    **To reject:** Add label `bot-fix-failed` and comment with your reason.
 
@@ -626,14 +632,22 @@ audit-skipped, and audit-loop-approved).
    Assisted-by: OpenCode / <model version>"
    git push -u origin "$BRANCH"
    ```
-   Then post a Jira comment with the FULL plan content (not a link):
+   Then post a Jira comment with the FULL plan content (not a link).
+   Wrap branch names and file paths in backtick code.
    ```
    ## Fix Plan (APPROVED, awaiting human review)
 
-   **Branch**: <BRANCH>
+   **Branch**: [View on GitHub](<github_url>/tree/<BRANCH>)
    **Confidence**: HIGH/MEDIUM/LOW
 
-   <paste the entire fix-plan.md content here>
+   ### Root Cause
+   <root cause text — wrap file paths in backtick code>
+
+   ### Approach
+   <approach text>
+
+   ### Planned Files
+   - `path/to/file.ext` — <change description>
 
    **To authorize implementation:** Add label `bot-plan-approved` to this ticket.
    **To revise the plan:** Edit this comment in Jira (click ... → Edit),
@@ -854,7 +868,7 @@ For each validated MAJOR/CRITICAL finding:
 
 Increment plan version (v1 → v2). Save to `.audit/approved-plan.md`.
 
-Post to Jira:
+Post to Jira (wiki markup):
 ```
 ## Fix Plan (vN — Iteration N Revision)
 **Findings Addressed**: X MAJOR, Y gaps noted

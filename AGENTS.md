@@ -26,14 +26,14 @@ Jira (autofix label) → Watcher → Fix Agent → Review Agent ↔ Review-Fix A
 autofix (permanent)
   ↓ (missing repo URL)           ↓ (repo URL found)
   bot-missing-info                bot-in-progress → bot-plan-ready → bot-in-progress → bot-ready-for-review → bot-review-complete → bot-merged
-  (auto re-check: URL found        (audit done)    (human adds       (implement)       ↘ bot-fix-failed     ↑
-   → removes label                                  bot-proceed)                          ↑ (user adds    bot-review-fix (max 3 cycles)
-   → re-enters queue)                                                                     ↑  bot-retry)
+  (auto re-check: URL found        (audit done)    (human adds        (implement)       ↘ bot-fix-failed     ↑
+   → removes label                                  bot-plan-approved)                      ↑ (user adds    bot-review-fix (max 3 cycles)
+   → re-enters queue)                                                                       ↑  bot-retry)
                                                                      bot-fix-failed → bot-in-progress (retry, max 2)
 
 no-autofix — opt-out: ticket excluded from automation while keeping autofix label
 bot-plan-ready — plan approved by audit sub-agents, awaiting human review (PLAN_APPROVAL_REQUIRED=true)
-bot-proceed — human adds to authorize implementation after reviewing the plan
+bot-plan-approved — human adds to authorize implementation after reviewing the plan
 bot-retry — user adds to bot-fix-failed ticket to trigger re-processing (max 2 retries)
 bot-cancelled — human override: stops active sessions, moves to bot-fix-failed
 ```

@@ -42,12 +42,17 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
 ## Entry Gates
 
 1. **Jira ticket accessible** — fetch via `atlassian_jira_get_issue`
-2. **Human approval verified** — check the ticket labels BEFORE adding
-   any labels. The `bot-plan-approved` label must be present.
-   If `bot-plan-approved` is NOT present:
-   - Add Jira comment: "Implementation requires human approval. Please
-     review the fix plan and add `bot-plan-approved` label to proceed."
-   - Do NOT add `bot-in-progress`. Do NOT proceed — exit immediately.
+2. **Human approval verified** — this is a HARD GATE, no exceptions.
+   Check the ticket labels BEFORE adding any labels. The
+   `bot-plan-approved` label MUST be present in the Jira labels array.
+   The prompt text ("implement the approved fix") is NOT approval —
+   only the Jira label counts.
+   If `bot-plan-approved` is NOT in the labels:
+   - Add Jira comment: "Implementation blocked: `bot-plan-approved`
+     label not found. A human must review the fix plan and add the
+     `bot-plan-approved` label before implementation can proceed."
+   - Do NOT add `bot-in-progress`. Do NOT add `bot-plan-approved`.
+   - EXIT IMMEDIATELY — do not proceed to any phase.
 3. **Approved plan exists** — the investigation agent either pushed a
    branch with `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` (when
    `PLAN_IN_PR=true`) or posted the full plan in a Jira comment (when
@@ -392,11 +397,13 @@ Replace `<model version>` with the model reported by the runtime.
    - Root cause: HIGH if single file, MEDIUM if 2-3 candidates
    - Approach: HIGH if matches codebase pattern, MEDIUM if alternatives
    - Scope: HIGH if grep confirmed all sites, MEDIUM if cross-package
-5. Add structured Jira comment via `atlassian_jira_add_comment`:
+5. Add structured Jira comment via `atlassian_jira_add_comment`.
+   Wrap branch names and file paths in backtick code to prevent
+   Jira auto-linking ticket keys.
    ```
    ## Fix Applied
-   **PR**: [#N](<pr_url>)
-   **Branch**: <branch_name>
+   **PR**: [<pr_url>](<pr_url>)
+   **Branch**: [View on GitHub](<github_url>/tree/<branch_name>)
    **Changes**: N files (+X, -Y)
    **Summary**: <what was changed and why>
    **Tests**: Passing

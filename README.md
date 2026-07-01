@@ -133,6 +133,8 @@ Full config reference: [docs/Architecture.md](docs/Architecture.md) → config.e
 > **Note:** Open models (30-35B) can often identify root causes correctly but
 > struggle with the multi-phase implementation pipeline. The bottleneck is
 > instruction following and tool-call reliability, not reasoning capability.
+>
+> For full setup instructions, see the [Model Configuration Guide](docs/models.md).
 
 ## Project Structure
 
@@ -165,6 +167,7 @@ AGENTS.md             # Project rules loaded into agent context
 | [docs/quickstart-openshell.md](docs/quickstart-openshell.md) | OpenShell sandbox — local Podman isolation |
 | [docs/deploy-openshift.md](docs/deploy-openshift.md) | OpenShift cluster deployment + OpenShell |
 | [docs/Architecture.md](docs/Architecture.md) | System design, label state machine, audit loop |
+| [docs/models.md](docs/models.md) | Model setup — Vertex AI, Ollama, LiteMaaS providers |
 | [eval/README.md](eval/README.md) | Model evaluation results and benchmarking |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute — code standards, workflow, review process |
 

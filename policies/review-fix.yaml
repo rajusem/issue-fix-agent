@@ -42,6 +42,10 @@ network_policies:
         port: 443
         protocol: rest
         access: read-only
+      - host: objects.githubusercontent.com
+        port: 443
+        protocol: rest
+        access: read-only
     binaries:
       - path: /**
 

@@ -6,7 +6,7 @@
 > implementation needs stronger model). Local OpenShell sandbox E2E verified
 > with Claude Opus (investigate + implement + PR creation).
 >
-> Detailed step-by-step with troubleshooting: `local-docs/setup-openshift-cluster.md`
+> See the Troubleshooting section at the bottom of this guide for common issues.
 
 ## 1. Build and Push Image
 
@@ -142,8 +142,7 @@ or wait for a stronger open model on LiteMaaS.
 
 ## Troubleshooting
 
-See `local-docs/setup-openshift-cluster.md` for detailed troubleshooting
-of 40+ issues encountered during development, including:
+Common issues encountered during deployment:
 - SCC permission failures
 - OpenShell sandbox pod stuck in Pending
 - Image pull errors

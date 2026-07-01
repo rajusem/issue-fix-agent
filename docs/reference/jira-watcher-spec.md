@@ -14,7 +14,7 @@ type: workflow
 
 This skill runs one complete polling cycle:
 1. Pick up new `autofix` tickets → dispatch fix sessions
-1B. Pick up `bot-plan-ready` + `bot-proceed` tickets → dispatch implementation sessions
+1B. Pick up `bot-plan-ready` + `bot-plan-approved` tickets → dispatch implementation sessions
 2. Pick up `bot-ready-for-review` tickets → dispatch review sessions
 3. Pick up `bot-review-fix` tickets → dispatch review-fix sessions
 4. Check for merged/closed PRs → update Jira
@@ -198,7 +198,7 @@ Only runs when `PLAN_APPROVAL_REQUIRED=true` (default).
 
 ### Query 1 — Approved plans ready to implement
 ```
-JQL: labels = bot-plan-ready AND labels = bot-proceed AND labels NOT IN (bot-in-progress) AND project IN (<WATCHED_PROJECTS>)
+JQL: labels = bot-plan-ready AND labels = bot-plan-approved AND labels NOT IN (bot-in-progress) AND project IN (<WATCHED_PROJECTS>)
 ```
 
 ### For each ticket:
@@ -206,7 +206,8 @@ JQL: labels = bot-plan-ready AND labels = bot-proceed AND labels NOT IN (bot-in-
 1. Read Jira ticket comments to extract repo URL and branch from the
    original `## Agent Session Started` comment
 2. Check concurrency limits (`MAX_CONCURRENT_FIX_SESSIONS`)
-3. Remove labels: `bot-plan-ready`, `bot-proceed`
+3. Remove labels: `bot-plan-ready` (keep `bot-plan-approved` — the
+   implement agent verifies it as proof of human approval)
 4. Add label: `bot-in-progress`
 5. Dispatch fix agent session (implementation only):
    ```json
@@ -234,7 +235,7 @@ JQL: labels = bot-plan-ready AND labels = bot-proceed AND labels NOT IN (bot-in-
 
 ### Query 2 — Stale unapproved plans (timeout)
 ```
-JQL: labels = bot-plan-ready AND labels NOT IN (bot-proceed, bot-fix-failed, bot-in-progress) AND project IN (<WATCHED_PROJECTS>)
+JQL: labels = bot-plan-ready AND labels NOT IN (bot-plan-approved, bot-fix-failed, bot-in-progress) AND project IN (<WATCHED_PROJECTS>)
 ```
 
 ### For each ticket:
