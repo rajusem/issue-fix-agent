@@ -124,7 +124,7 @@ FIX-INVESTIGATE AGENT (configurable model, 90m TTL, sandboxed)
   │
   │
   ├─ Post plan to Jira, set bot-plan-ready
-  └─ Wait for human approval (bot-plan-approved or bot-proceed)
+  └─ Wait for human approval (bot-plan-approved)
   │
   ▼
 FIX-IMPLEMENT AGENT (configurable model, 150m TTL, sandboxed)

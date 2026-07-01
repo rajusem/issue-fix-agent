@@ -97,6 +97,10 @@ openshell sandbox create --name fix-run \
   '
 ```
 
+**Configuration flags** — pass via `--env` to control behavior:
+- `FORK_MODE=true`: auto-fork upstream, cross-repo PRs (default: `false`)
+- `PLAN_IN_PR=false`: plan in Jira comment only, not in PR (default: `true`)
+
 **With Ollama (local models):**
 
 ```bash
@@ -132,4 +136,4 @@ openshell sandbox create --name fix-run \
 | Permissions | `--dangerously-skip-permissions` | Sandbox policy enforces |
 | Ollama URL | `localhost:11434` | `host.docker.internal:11434` |
 | gcloud creds | `~/.config/gcloud/` auto-discovered | Must upload + set `GOOGLE_APPLICATION_CREDENTIALS` |
-| Cleanup | Manual (`rm -rf target-repo/`) | Automatic (`--no-keep`) |
+| Cleanup | Manual (`rm -rf work/ target-repo/`) | Automatic (`--no-keep`) |

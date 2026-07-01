@@ -36,13 +36,18 @@ fall back to `curl` with Basic Auth (`$JIRA_USERNAME` / `$JIRA_API_TOKEN`):
 curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
   -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"update":{"labels":[{"remove":"bot-in-progress"},{"add":"bot-ready-for-review"}]}}'
+  -d '{"update":{"labels":[{"remove":"bot-in-progress"},{"remove":"bot-plan-approved"},{"remove":"bot-plan-ready"},{"add":"bot-ready-for-review"}]}}'
 ```
 
 ## Entry Gates
 
 1. **Jira ticket accessible** — fetch via `atlassian_jira_get_issue`
-2. **`bot-in-progress` label present** — if not, add it
+2. **Human approval verified** — check the ticket labels BEFORE adding
+   any labels. The `bot-plan-approved` label must be present.
+   If `bot-plan-approved` is NOT present:
+   - Add Jira comment: "Implementation requires human approval. Please
+     review the fix plan and add `bot-plan-approved` label to proceed."
+   - Do NOT add `bot-in-progress`. Do NOT proceed — exit immediately.
 3. **Approved plan exists** — the investigation agent either pushed a
    branch with `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` (when
    `PLAN_IN_PR=true`) or posted the full plan in a Jira comment (when
@@ -50,9 +55,26 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
 
 ## Phase 5: Read Approved Plan and Prepare
 
-1. Record start time: `START_TIME=$(date +%s)`
-2. Validate environment: `git --version`, `gh api user --jq .login`
-3. Fetch the Jira ticket via `atlassian_jira_get_issue`
+1. **Add `bot-in-progress` label** to signal the agent is actively working.
+   Keep `bot-plan-approved` — it stays as proof of human approval until
+   implementation completes. Both are removed at the end:
+   - Success: remove `bot-in-progress` + `bot-plan-approved` + `bot-plan-ready`,
+     add `bot-ready-for-review`
+   - Failure: remove `bot-in-progress` + `bot-plan-approved` + `bot-plan-ready`,
+     add `bot-fix-failed`
+2. Post Jira milestone comment with session context:
+   ```
+   ## Agent Session Started
+   Implementation agent has started working on this ticket.
+
+   **Model**: <model from session context>
+   **Environment**: <DEPLOY_MODE from prompt context>
+   **FORK_MODE**: <FORK_MODE value>
+   **PLAN_IN_PR**: <PLAN_IN_PR value>
+   ```
+3. Record start time: `START_TIME=$(date +%s)`
+3. Validate environment: `git --version`, `gh api user --jq .login`
+4. Fetch the Jira ticket via `atlassian_jira_get_issue`
 4. Extract from the ticket's Agent Configuration section:
    - **Repository URL** (required)
    - **Branch** (required — base branch)
@@ -60,9 +82,14 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    `## Fix Plan` comment — it contains the branch name.
 6. Clone the repository on the fix branch. Check `${FORK_MODE:-false}`:
 
+   First clean up any previous clone:
+   ```bash
+   rm -rf work 2>/dev/null
+   ```
+
    **If `false` (default):** Clone directly from the ticket's repo URL:
    ```bash
-   git clone --depth=50 --branch <fix-branch> <repo_url> .
+   git clone --depth=50 --branch <fix-branch> <repo_url> work && cd work
    ```
 
    **If `true`:** The fix branch is on the FORK, not upstream. Compute
@@ -71,7 +98,7 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    FORK_OWNER=$(gh api user --jq .login)
    REPO_NAME=$(basename "<repo_url>")   # e.g., "obs-mcp"
    git clone --depth=50 --branch <fix-branch> \
-     "https://github.com/$FORK_OWNER/$REPO_NAME" .
+     "https://github.com/$FORK_OWNER/$REPO_NAME" work && cd work
    git remote add upstream <repo_url>   # upstream is read-only
    ```
 
@@ -167,7 +194,20 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
 ## Phase 8: Test
 
 1. Look for test scripts in package.json, Makefile, or CI config.
-2. Run relevant tests (prefer targeted tests over the full suite):
+   Discover the test framework and relevant test files:
+   a. **Detect framework** from project manifests:
+      - Go: `go.mod` → `go test ./...`; check Makefile for `test` target
+      - Python: `pyproject.toml`/`setup.cfg` → `pytest` or `python -m pytest`
+      - Node: `package.json` → read `scripts.test`
+      - Java: `pom.xml` → `mvn test`; `build.gradle` → `gradle test`
+   b. **Map source→test files** by naming convention:
+      - Go: `foo.go` → `foo_test.go` (same directory)
+      - Python: `module.py` → `test_module.py` or `tests/test_module.py`
+      - Node: `component.ts` → `component.test.ts` or `__tests__/component.ts`
+      - Java: `Foo.java` → `FooTest.java` (test source tree)
+   Prefer targeted tests over full suite. Fall back to full suite only if
+   targeted tests cannot be identified.
+2. Run relevant tests:
    ```bash
    # Examples:
    make test-unit
@@ -180,10 +220,17 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    Before fixing a failing test, verify it's not a pre-existing failure:
    ```bash
    git stash
-   <same test command> 2>&1 | tee /tmp/baseline-check.log
+   if command -v timeout &>/dev/null; then
+     timeout 300 bash -c '<same test command>' 2>&1 | tee /tmp/baseline-check.log
+   else
+     <same test command> 2>&1 | tee /tmp/baseline-check.log
+   fi
    BASELINE_EXIT=$?
    git stash pop || (git checkout -- . && git stash drop)
    ```
+   - Timeout: 5 minutes (300s). If exceeded, treat as inconclusive —
+     log "Baseline check timed out" and assume the failure may be
+     pre-existing. Proceed with caution.
    - If the test ALSO fails on the clean branch → pre-existing failure.
      Log to Jira: "Test `<name>` fails without agent changes (pre-existing)."
      Skip this test — do not count against pass/fail assessment.
@@ -249,7 +296,20 @@ Replace `<model version>` with the model reported by the runtime.
    ```bash
    git push -u origin "$BRANCH"
    ```
-3. Create PR. Check `${FORK_MODE:-false}`:
+3. **Check for existing PR** before creating a new one (handles retries):
+   ```bash
+   EXISTING_PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+   ```
+   - If an open PR exists: update its title and body to match the current
+     fix, then skip to Phase 11:
+     ```bash
+     gh pr edit "$EXISTING_PR" \
+       --title "fix(<component>): <summary>" \
+       --body "<PR body from template below>"
+     ```
+     Log to Jira: "Updated existing PR #$EXISTING_PR on branch $BRANCH."
+   - If no open PR exists: create a new PR (proceed to step 4).
+4. Create PR. Check `${FORK_MODE:-false}`:
 
    **If `false` (default):**
    ```bash
@@ -293,7 +353,26 @@ Replace `<model version>` with the model reported by the runtime.
      --title "fix(<component>): <summary>" \
      --body "$(cat <<'EOF'
    <!-- issue-fix-agent:jira=<TICKET-KEY> session=$OPENCODE_SESSION_ID -->
-   <same PR body as above>
+
+   ## Summary
+   <Brief description of the fix>
+
+   ## Root Cause
+   <What was wrong and why>
+
+   ## Changes
+   - <file>: <what changed and why>
+
+   ## Testing
+   - [x] Existing tests pass
+   - [x] Regression test added
+
+   ## Jira
+   [<TICKET-KEY>](https://<JIRA_SITE>/browse/<TICKET-KEY>)
+
+   ---
+   Environment: <DEPLOY_MODE from prompt context>
+   Assisted-by: OpenCode / <model version>
    EOF
    )"
    ```
@@ -352,7 +431,7 @@ Replace `<model version>` with the model reported by the runtime.
    ```
 6. **LAST STEP — Label swap** (after all comments are posted):
    Atomic label swap using `atlassian_jira_update_issue`:
-   - Remove `bot-in-progress`
+   - Remove `bot-in-progress`, `bot-plan-approved`, `bot-plan-ready`
    - Add `bot-ready-for-review`
 
 ## Failure Protocol
@@ -360,7 +439,8 @@ Replace `<model version>` with the model reported by the runtime.
 If at any point you cannot proceed:
 
 1. Document what was attempted and what failed.
-2. Atomic label swap: remove `bot-in-progress`, add `bot-fix-failed`
+2. Atomic label swap: remove `bot-in-progress`, `bot-plan-approved`,
+   `bot-plan-ready`, add `bot-fix-failed`
 3. Compute duration: `ELAPSED_MIN=$(( ($(date +%s) - START_TIME) / 60 ))`
 4. Add Jira comment:
    ```

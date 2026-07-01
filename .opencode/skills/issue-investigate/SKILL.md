@@ -51,8 +51,9 @@ add a comment explaining the failure, then exit.
 
 1. **Jira ticket accessible** — use `atlassian_jira_get_issue` to fetch
    the ticket. If it fails, exit with error.
-2. **`bot-in-progress` label present** — verify the ticket has the
-   `bot-in-progress` label (confirms proper dispatch by watcher).
+2. **`bot-in-progress` label present** — if the ticket has
+   `bot-in-progress`, confirms watcher dispatch. If not present
+   (manual run), the agent adds it in Phase 1 step 1. Either way, proceed.
 3. **Repository URL available** — parse description and comments for the
    `**Repository**:` field. If not found, exit with `bot-fix-failed` and
    comment "Repository URL not found in ticket."
@@ -151,11 +152,20 @@ fix attempt. Before proceeding to Phase 1:
 
 ## Phase 1: Understand
 
-1. Record session start time FIRST (before any other work):
+1. **Add `bot-in-progress` label** immediately so the user knows
+   the agent is working. Use `atlassian_jira_update_issue` to add
+   `bot-in-progress` if not already present:
+   ```
+   Add label: bot-in-progress
+   ```
+   This label is removed when the agent finishes (replaced by
+   `bot-plan-ready` on success or `bot-fix-failed` on failure).
+
+2. Record session start time:
    ```bash
    START_TIME=$(date +%s)
    ```
-2. Read Jira ticket via `atlassian_jira_get_issue`:
+3. Read Jira ticket via `atlassian_jira_get_issue`:
    - Extract issue summary, description, comments
    - Parse agent configuration fields from description/comments:
      - `**Repository**:` (required)
@@ -179,7 +189,6 @@ fix attempt. Before proceeding to Phase 1:
         skill_url_allowlist)
      b. If invalid or missing: skip (knowledge repo is optional)
      c. If valid: will be cloned in Phase 2
-3. Post Jira milestone comment: "Agent started working on this ticket."
 4. **RTK Token Optimization** (conditional — skip if $RTK_ENABLED is
    not "true"):
    ```bash
@@ -224,9 +233,27 @@ fix attempt. Before proceeding to Phase 1:
 
    Record the classification for the fix plan (Phase 4A).
 
+6. **Post session started comment** — post a SINGLE Jira comment with
+   session context AND signal classification (from step 5 above):
+   ```
+   ## Agent Session Started
+   Investigation agent has started working on this ticket.
+
+   **Signal Classification**: <signal from step 5>
+   **Repository**: <repo URL from ticket>
+   **Branch**: <base branch from ticket>
+   **Model**: <model from session context>
+   **Environment**: <DEPLOY_MODE from prompt context>
+   **FORK_MODE**: <FORK_MODE value>
+   **PLAN_IN_PR**: <PLAN_IN_PR value>
+   ```
+
 ## Phase 2: Prepare
 
-1. Check `${FORK_MODE:-false}` to determine clone strategy:
+1. Clean up any previous clone and check `${FORK_MODE:-false}`:
+   ```bash
+   rm -rf work 2>/dev/null
+   ```
 
    **If `false` (default):** Clone directly from the repo URL in the ticket:
    ```bash
@@ -289,7 +316,8 @@ fix attempt. Before proceeding to Phase 1:
    ```
    In FORK_MODE=true, all pushes go to `origin` (= the fork).
    `upstream` is read-only (for fetch/rebase only).
-5. Post Jira milestone comment: "Branch `$BRANCH` created."
+5. Post Jira milestone comment: "Branch `$BRANCH` created locally.
+   Will be pushed to remote after investigation and plan are complete."
 6. **Knowledge Repo Clone** (if a valid Knowledge Repo URL was parsed
    in Phase 1):
    ```bash
@@ -393,8 +421,8 @@ traceability and enables the review agent's plan compliance check.
   dependency versions. Check go.mod for the exact version.
 - If multiple approaches exist, pick the one that changes fewer files
   and uses only APIs already used elsewhere in the codebase.
-- To inspect Go module types, browse the pre-cached source at
-  `/home/sandbox/go/pkg/mod/<module>@<version>/` for struct defs.
+- To inspect Go module types, locate the module cache:
+  `$(go env GOMODCACHE)/<module>@<version>/` and browse for struct defs.
 - Common OCM pattern for filtering Placement by cluster label:
   ```go
   Predicates: []clusterv1beta1.ClusterPredicate{{
@@ -467,15 +495,10 @@ traceability and enables the review agent's plan compliance check.
 
 3. Count planned files and lines to change for the complexity gate.
 
-4. Post the plan to Jira via `atlassian_jira_add_comment`:
-   ```
-   ## Fix Plan (v1)
-   **Approach**: <one-line summary>
-   **Files**: N files to change
-   **Risk**: Low/Medium/High
-   **Confidence**: HIGH/MEDIUM/LOW
-   **Status**: Awaiting complexity gate
-   ```
+4. Skip posting the plan to Jira at this point. The plan is posted
+   ONCE at the end — after the complexity gate decides whether to
+   skip audit or after audit approval. Only ONE `## Fix Plan` comment
+   should exist on the ticket.
 
 ## Complexity Gate
 
@@ -581,7 +604,7 @@ audit-skipped, and audit-loop-approved).
 
    <1-2 sentence summary of root cause and approach>
 
-   **To authorize implementation:** Add label `bot-proceed` to this ticket.
+   **To authorize implementation:** Add label `bot-plan-approved` to this ticket.
    You may edit `.autofix/<PROJECT-KEY>/<TICKET-KEY>/fix-plan.md` on the branch before approving — the
    implementation agent will use the latest version.
    **To reject:** Add label `bot-fix-failed` and comment with your reason.
@@ -612,7 +635,7 @@ audit-skipped, and audit-loop-approved).
 
    <paste the entire fix-plan.md content here>
 
-   **To authorize implementation:** Add label `bot-proceed` to this ticket.
+   **To authorize implementation:** Add label `bot-plan-approved` to this ticket.
    **To revise the plan:** Edit this comment in Jira (click ... → Edit),
    or post a new `## Fix Plan (Revised)` comment. The implementation agent
    will use the most recent plan comment.
@@ -811,8 +834,9 @@ IF any auditor verdict is "reject":
 IF no CRITICAL or MAJOR findings after validation:
   → plan APPROVED, exit loop
 
-IF convergence check fails at iteration 2 (findings not decreasing):
-  → mark bot-fix-failed, post "plan is diverging", EXIT
+IF iteration >= 2 AND CRITICAL/MAJOR findings count did not decrease
+from previous iteration:
+  → mark bot-fix-failed, post "plan is diverging (no progress in last iteration)", EXIT
 
 IF this is the final iteration AND CRITICAL/MAJOR remain:
   → mark bot-fix-failed, post "max iterations reached", EXIT

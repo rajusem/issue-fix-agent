@@ -17,6 +17,7 @@ eval/*
 
 # Agent runtime artifacts
 target-repo/
+work/
 .audit/
 .session_start_time
 autofix/

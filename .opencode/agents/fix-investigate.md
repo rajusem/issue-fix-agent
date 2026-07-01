@@ -33,8 +33,8 @@ investigate a Jira issue and produce an audited fix plan.
   push it, update Jira, and exit. Budget: ~30 tool calls for investigation,
   ~10 for plan writing and posting.
 - Clone the repo into the current working directory (not /tmp/).
-  Use `git clone <url> ./target-repo`. All git commands (add, commit,
-  push) must run from INSIDE the cloned repo: `cd target-repo && git ...`.
+  Use `git clone <url> work && cd work`. All git commands (add, commit,
+  push) must run from INSIDE the cloned repo.
 
 ## Scope
 

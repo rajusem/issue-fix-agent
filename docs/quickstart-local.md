@@ -89,6 +89,10 @@ opencode run --agent fix-implement \
 **Plan file behavior** — set `PLAN_IN_PR=false` to keep plan files out of
 PRs (plan posted in Jira comment instead). See README Configuration table.
 
+**Fork mode** — set `FORK_MODE=true` if the bot doesn't have push access
+to the upstream repo. Agent will auto-fork, sync, and create cross-repo PRs.
+Default `false` (push directly to ticket's repo URL).
+
 **Option B — Watcher (automated, polls Jira):**
 
 ```bash
@@ -121,4 +125,4 @@ in the main README for details.
   interactive permission prompts. Do not use in production.
 - For non-interactive runs (CI, scripts), wrap with `script -q <logfile>`
   to provide a PTY.
-- Clean up cloned repos after runs: `rm -rf target-repo/`
+- Clean up cloned repos after runs: `rm -rf work/ target-repo/`

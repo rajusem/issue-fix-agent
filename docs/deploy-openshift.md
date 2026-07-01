@@ -110,6 +110,18 @@ oc apply -f manifests/resourcequota.yaml
 8. NetworkPolicy + ResourceQuota
 ```
 
+## Configuration Flags
+
+Key flags in the configmap (`manifests/configmap.yaml`):
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `DRY_RUN` | `false` | Start with `true` to verify Jira polling without mutations |
+| `FORK_MODE` | `false` | `true`: auto-fork upstream repos, cross-repo PRs. `false`: push directly |
+| `PLAN_IN_PR` | `true` | `true`: plan file in PR. `false`: plan in Jira comment only |
+| `DEPLOY_MODE` | auto | Auto-detected (`openshift+openshell`). Override if needed |
+| `SANDBOX_ENABLED` | `true` | Enable OpenShell sandbox for agent dispatch |
+
 ## Cluster Model Note
 
 The configmap defaults to `litemaas/Qwen3.6-35B-A3B` (the only model

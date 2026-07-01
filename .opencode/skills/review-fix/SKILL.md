@@ -23,7 +23,7 @@ finding, and pushes fixes to the same PR branch. No human confirmation.
 - `atlassian_jira_update_issue` — update labels (use for label swaps)
 - `atlassian_jira_add_comment` — add comments
 
-After every label swap via `editJiraIssue`, re-fetch the ticket to verify
+After every label swap via `atlassian_jira_update_issue`, re-fetch the ticket to verify
 the expected labels are present. If inconsistent, retry once before
 following Failure Protocol. If the verification re-fetch itself fails
 (network/timeout error), log a warning and continue — do not trigger
@@ -95,7 +95,10 @@ Verify before starting — if any gate fails, follow the Failure Protocol.
 
 ## Phase 3: Clone and Checkout
 
-1. Clone the repo. Check `${FORK_MODE:-false}`:
+1. Clean up any previous clone and check `${FORK_MODE:-false}`:
+   ```bash
+   rm -rf work 2>/dev/null
+   ```
 
    **If `false` (default):** Clone from the PR's repo URL:
    ```bash
