@@ -72,16 +72,16 @@ set -a && source .env && set +a
 opencode run --agent fix-investigate \
   --dangerously-skip-permissions \
   -m $MODEL \
-  "Investigate Jira ticket YOUR-TICKET-KEY. Follow the skill."
+  "Investigate Jira ticket YOUR-TICKET-KEY. Follow the skill. FORK_MODE: $FORK_MODE. PLAN_IN_PR: $PLAN_IN_PR"
 
-# Review the plan on GitHub (.autofix/<PROJECT>/<TICKET>/fix-plan.md)
-# Then swap label: bot-plan-ready → bot-in-progress
+# Review the plan in Jira or on GitHub (.autofix/<PROJECT>/<TICKET>/fix-plan.md)
+# Add bot-plan-approved label to authorize implementation
 
 # Step 2: Implement — creates a PR
 opencode run --agent fix-implement \
   --dangerously-skip-permissions \
   -m $MODEL \
-  "Implement the approved fix for YOUR-TICKET-KEY. Follow the skill."
+  "Implement the approved fix for YOUR-TICKET-KEY. Follow the skill. FORK_MODE: $FORK_MODE. PLAN_IN_PR: $PLAN_IN_PR"
 
 # Agent creates PR, updates Jira, swaps label to bot-ready-for-review
 ```
@@ -90,8 +90,10 @@ opencode run --agent fix-implement \
 PRs (plan posted in Jira comment instead). See README Configuration table.
 
 **Fork mode** — set `FORK_MODE=true` if the bot doesn't have push access
-to the upstream repo. Agent will auto-fork, sync, and create cross-repo PRs.
-Default `false` (push directly to ticket's repo URL).
+to the upstream repo. Agent will auto-fork, sync, push to fork, and create
+cross-repo PRs (fork → upstream). Default `false` (push directly to ticket's
+repo URL). See [Architecture.md — FORK_MODE Flag](Architecture.md#fork_mode-flag)
+for the full workflow and token requirements.
 
 **Option B — Watcher (automated, polls Jira):**
 
@@ -125,4 +127,4 @@ in the main README for details.
   interactive permission prompts. Do not use in production.
 - For non-interactive runs (CI, scripts), wrap with `script -q <logfile>`
   to provide a PTY.
-- Clean up cloned repos after runs: `rm -rf work/ target-repo/`
+- Clean up cloned repos after runs: `rm -rf work/`

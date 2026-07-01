@@ -68,7 +68,7 @@ All label swaps use `atlassian_jira_update_issue` with both `remove` and
    - If still inconsistent after retry: add `bot-fix-failed` label and
      comment: "Label swap failed — ticket in inconsistent state. Expected
      to remove `<old>` and add `<new>`. Manual intervention needed."
-4. If the verification `getJiraIssue` call itself fails (network error),
+4. If the verification `atlassian_jira_get_issue` call itself fails (network error),
    log a warning and continue — do not enter `bot-fix-failed` for a
    transient verification failure.
 
@@ -194,7 +194,8 @@ Use `atlassian_jira_search` with the JQL above.
 
 Handles tickets where the fix agent has completed investigation and
 audit, posted the approved plan, and is waiting for human approval.
-Only runs when `PLAN_APPROVAL_REQUIRED=true` (default).
+Human approval is always required — the watcher checks for both
+`bot-plan-ready` and `bot-plan-approved` labels before dispatching.
 
 ### Query 1 — Approved plans ready to implement
 ```

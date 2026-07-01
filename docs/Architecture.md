@@ -329,8 +329,9 @@ The gate is governed by two env vars: if `AUDIT_ENABLED=false`, all
 auditing is skipped regardless of complexity. If `AUDIT_SKIP_SIMPLE=true`
 (default), rule 5 allows simple fixes to skip audit.
 
-All fix sessions use `FIX_SESSION_TTL=150m` regardless of complexity
-class. The routing gate controls audit behavior only, not TTL.
+Investigation sessions use `INVESTIGATE_SESSION_TTL=90m`, implementation
+sessions use `IMPLEMENT_SESSION_TTL=150m`. The routing gate controls
+audit behavior only, not TTL.
 
 ### Prompt Injection Defense
 
@@ -407,6 +408,65 @@ Controlled by `PLAN_IN_PR` env var (default: `true`):
 - **`false`**: Plan NOT committed to the branch. Full plan content posted
   directly in the Jira comment. Implement agent reads plan from Jira
   instead of disk. Plan is immutable (Jira comments cannot be edited).
+
+### FORK_MODE Flag
+
+Controlled by `FORK_MODE` env var (default: `false`):
+
+- **`false` (default)**: Agent pushes fix branches directly to the repo
+  URL in the Jira ticket. The ticket repo must grant push access to the
+  `GITHUB_TOKEN` owner. PRs are created within the same repo.
+
+- **`true`**: Agent auto-forks the upstream repo to the `GITHUB_TOKEN`
+  owner's account, pushes to the fork, and creates a cross-repo PR
+  (fork → upstream). Use when the bot has no push access to upstream.
+
+**How it works (FORK_MODE=true):**
+
+```
+1. Investigation agent reads upstream URL from Jira ticket
+   e.g., https://github.com/stolostron/multicluster-observability-operator
+
+2. Detects fork owner:
+   FORK_OWNER=$(gh api user --jq .login)   # e.g., "rajusem"
+
+3. Checks if fork exists, creates if not:
+   gh repo fork <upstream> --clone=false
+   (polls until fork is provisioned, max 60s)
+
+4. Syncs fork from upstream:
+   gh repo sync $FORK_OWNER/<repo> --branch <base-branch>
+
+5. Clones the FORK (not upstream):
+   git clone https://github.com/$FORK_OWNER/<repo>
+
+6. Creates fix branch, investigates, pushes to fork
+
+7. Implementation agent clones fork, implements fix, pushes to fork
+
+8. Creates cross-repo PR:
+   gh pr create \
+     --repo <upstream-owner>/<repo> \
+     --head "$FORK_OWNER:$BRANCH" \
+     --base <base-branch>
+```
+
+**Requirements:**
+- `GITHUB_TOKEN` must have `Contents: Read and write` permission
+  (needed to push to fork, even though the fork is owned by the token owner)
+- `GITHUB_TOKEN` must have `Pull requests: Read and write` on the
+  upstream repo (to create cross-repo PRs)
+- Token scopes: `repo` for classic PATs, or fine-grained PAT with
+  the above permissions
+
+**When to use each mode:**
+
+| Scenario | FORK_MODE | Why |
+|----------|-----------|-----|
+| Demo/eval on your own fork | `false` | You own the repo, push works directly |
+| Production — bot has push access | `false` | Simpler flow, no fork management |
+| Production — no upstream push access | `true` | Bot forks and PRs from fork |
+| Open source contributions | `true` | Standard fork-and-PR workflow |
 
 ## Label State Machine
 
@@ -613,30 +673,28 @@ Agent-specific models are configured in `.opencode/agents/*.md` via the
 
 ### config.env
 
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `FIX_SESSION_TTL` | 150 | All fix sessions (simple exits early) |
-| `FIX_MODEL` | litemaas/Qwen3.6-35B-A3B | Fix agent model (cluster: LiteMaaS, local: override with -m) |
-| `REVIEW_MODEL` | litemaas/Qwen3.6-35B-A3B | Review agent model |
-| `REVIEW_SESSION_TTL` | 30 | Review session timeout (minutes) |
-| `REVIEW_FIX_MODEL` | litemaas/Qwen3.6-35B-A3B | Review-fix agent model |
-| `REVIEW_FIX_SESSION_TTL` | 45 | Review-fix session timeout (minutes) |
-| `WATCHER_MODEL` | litemaas/Qwen3.6-35B-A3B | Not used — watcher is Python, not an LLM agent |
-| `WATCHER_SESSION_TTL` | 15 | Not used — watcher uses JIRA_POLL_INTERVAL for cycle timing |
-| `MAX_CONCURRENT_FIX_SESSIONS` | 4 | Parallel fix sessions |
-| `MAX_CONCURRENT_REVIEW_SESSIONS` | 2 | Parallel review sessions |
-| `MAX_CONCURRENT_REVIEW_FIX_SESSIONS` | 2 | Parallel review-fix sessions |
-| `JIRA_POLL_INTERVAL` | 10 | Minutes between watcher cycles |
-| `REVIEW_FIX_MAX_CYCLES` | 3 | Max review-fix iterations |
-| `MAX_FIX_RETRIES` | 2 | Max retry attempts for failed fixes (user adds bot-retry) |
-| `RTK_ENABLED` | false | RTK token optimization (opt-in) |
-| `PLAN_IN_PR` | true | See PLAN_IN_PR Flag section above |
-| `FORK_MODE` | false | `false`: push to ticket's repo directly. `true`: fork to token owner, cross-repo PR |
-| `AUDIT_ENABLED` | true | Master switch for design audit loop |
-| `AUDIT_MAX_ITERATIONS` | 3 | Max audit loop iterations |
-| `AUDIT_SKIP_SIMPLE` | true | Skip audit for simple fixes |
-| `AUDIT_MODEL` | litemaas/Qwen3.6-35B-A3B | Model for all audit sub-agents |
-| ~~`AUDIT_MAX_COST_USD`~~ | — | Deferred — requires token-count API. `AUDIT_MAX_ITERATIONS` is the effective cost control. |
+| Variable | Default (code) | Default (cluster) | Purpose |
+|----------|---------------|-------------------|---------|
+| `FIX_MODEL` | `claude-opus-4-6` | `litemaas/Qwen3.6-35B-A3B` | Investigation + implementation agent model |
+| `INVESTIGATE_SESSION_TTL` | 90 | 90 | Investigation session timeout (minutes) |
+| `IMPLEMENT_SESSION_TTL` | 150 | 150 | Implementation session timeout (minutes) |
+| `REVIEW_MODEL` | `claude-sonnet-4-6` | `litemaas/Qwen3.6-35B-A3B` | Review agent model |
+| `REVIEW_SESSION_TTL` | 30 | 30 | Review session timeout (minutes) |
+| `REVIEW_FIX_MODEL` | `claude-opus-4-6` | `litemaas/Qwen3.6-35B-A3B` | Review-fix agent model |
+| `REVIEW_FIX_SESSION_TTL` | 45 | 45 | Review-fix session timeout (minutes) |
+| `AUDIT_MODEL` | `claude-sonnet-4-6` | `litemaas/Qwen3.6-35B-A3B` | Audit sub-agent model |
+| `MAX_CONCURRENT_FIX_SESSIONS` | 4 | 4 | Parallel fix sessions |
+| `MAX_CONCURRENT_REVIEW_SESSIONS` | 2 | 2 | Parallel review sessions |
+| `MAX_CONCURRENT_REVIEW_FIX_SESSIONS` | 2 | 2 | Parallel review-fix sessions |
+| `JIRA_POLL_INTERVAL` | 10 | 10 | Minutes between watcher cycles |
+| `REVIEW_FIX_MAX_CYCLES` | 3 | 3 | Max review-fix iterations |
+| `MAX_FIX_RETRIES` | 2 | 2 | Max retry attempts for failed fixes (user adds bot-retry) |
+| `RTK_ENABLED` | false | false | RTK token optimization (opt-in) |
+| `PLAN_IN_PR` | true | true | See PLAN_IN_PR Flag section above |
+| `FORK_MODE` | false | false | See FORK_MODE Flag section above |
+| `AUDIT_ENABLED` | true | true | Master switch for design audit loop |
+| `AUDIT_MAX_ITERATIONS` | 3 | 3 | Max audit loop iterations |
+| `AUDIT_SKIP_SIMPLE` | true | true | Skip audit for simple fixes |
 
 ### projects.json
 
@@ -687,7 +745,7 @@ their `.opencode/agents/*.md` file, not the parent agent's model.
 
 | Tier | Models | Pass Rate | Use for |
 |------|--------|-----------|---------|
-| **Production** | Claude Opus 4.6, Sonnet 4.6 (Vertex AI) | 100% (6/6) | All agents — recommended |
+| **Production** | Sonnet 4.6 (default), Opus 4.6 (complex/high-priority) | 100% (6/6) | All agents — Vertex AI |
 | **Limited** | DeepSeek R1 32B (Ollama local) | 33% (2/6) | Simple bugs, fastest (3 min avg) |
 | **Limited** | MiniMax M2.5 (Ollama Cloud) | 40% (2/5) | Simple bugs only |
 | **Investigation only** | Qwen 3.6 35B (LiteMaaS) | 0% full, 67% investigate | Cluster deployment (only LiteMaaS model) |
@@ -762,7 +820,8 @@ summarization when approaching context limits.
 
 ## TTL Management
 
-All fix sessions dispatch with `FIX_SESSION_TTL=150m`. The complexity
+Investigation sessions dispatch with `INVESTIGATE_SESSION_TTL=90m`,
+implementation with `IMPLEMENT_SESSION_TTL=150m`. The complexity
 gate runs inside the session (Phase 4, after RCA), so the watcher
 cannot set dynamic TTL at dispatch time. Simple fixes exit early
 (~30m), freeing the slot.
@@ -776,7 +835,7 @@ cannot set dynamic TTL at dispatch time. Simple fixes exit early
 
 | MCP Server | Used By | Operations |
 |------------|---------|------------|
-| `mcp-atlassian` | Fix, Review, Review-Fix agents | `getJiraIssue`, `searchJiraIssuesUsingJql`, `editJiraIssue`, `addCommentToJiraIssue`, `transitionJiraIssue` |
+| `mcp-atlassian` | Fix, Review, Review-Fix agents | `atlassian_jira_get_issue`, `atlassian_jira_search`, `atlassian_jira_update_issue`, `atlassian_jira_add_comment`, `atlassian_jira_transition_issue` |
 
 mcp-atlassian runs as a **local MCP server** inside each OpenShell
 sandbox, managed by OpenCode via `opencode.json`. Each agent run gets
@@ -785,7 +844,7 @@ its own mcp-atlassian instance — no shared service.
 The orchestrator (watcher script) uses **direct Jira REST API** (Python
 requests / curl), not MCP. It does not run inside a sandbox.
 
-Fallback: if `editJiraIssue` unavailable for labels, use `curl` with
+Fallback: if `atlassian_jira_update_issue` unavailable for labels, use `curl` with
 Basic Auth (`$JIRA_USERNAME` / `$JIRA_API_TOKEN`).
 
 ## Project Structure

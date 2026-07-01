@@ -93,12 +93,13 @@ openshell sandbox create --name fix-run \
     mkdir -p ~/.config && ln -s ~/gcloud ~/.config/gcloud
     opencode run --agent fix-investigate \
       -m google-vertex-anthropic/claude-sonnet-4-6@default \
-      "Investigate Jira ticket YOUR-TICKET. Follow the skill."
+      "Investigate Jira ticket YOUR-TICKET. Follow the skill. FORK_MODE: \$FORK_MODE. PLAN_IN_PR: \$PLAN_IN_PR"
   '
 ```
 
 **Configuration flags** — pass via `--env` to control behavior:
-- `FORK_MODE=true`: auto-fork upstream, cross-repo PRs (default: `false`)
+- `FORK_MODE=true`: auto-fork upstream, push to fork, cross-repo PRs (default: `false`).
+  See [Architecture.md — FORK_MODE Flag](Architecture.md#fork_mode-flag) for details.
 - `PLAN_IN_PR=false`: plan in Jira comment only, not in PR (default: `true`)
 
 **With Ollama (local models):**
@@ -136,4 +137,4 @@ openshell sandbox create --name fix-run \
 | Permissions | `--dangerously-skip-permissions` | Sandbox policy enforces |
 | Ollama URL | `localhost:11434` | `host.docker.internal:11434` |
 | gcloud creds | `~/.config/gcloud/` auto-discovered | Must upload + set `GOOGLE_APPLICATION_CREDENTIALS` |
-| Cleanup | Manual (`rm -rf work/ target-repo/`) | Automatic (`--no-keep`) |
+| Cleanup | Manual (`rm -rf work/`) | Automatic (`--no-keep`) |

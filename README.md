@@ -108,7 +108,7 @@ flowchart LR
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PLAN_IN_PR` | `true` | `true`: plan committed to branch + PR as audit trail. `false`: plan posted in Jira comment only, not in PR. |
-| `FORK_MODE` | `false` | `false`: push directly to ticket's repo. `true`: auto-fork to token owner, cross-repo PR. |
+| `FORK_MODE` | `false` | `false`: push directly to ticket's repo. `true`: auto-fork to token owner, cross-repo PR. [Details](docs/Architecture.md#fork_mode-flag) |
 | `DEPLOY_MODE` | auto | Auto-detected: `local`, `local+openshell`, or `openshift+openshell`. Override if needed. |
 | `JIRA_POLL_INTERVAL` | `20` | Minutes between watcher polling cycles |
 | `MAX_FIX_RETRIES` | `2` | Max retry attempts when human adds `bot-retry` |

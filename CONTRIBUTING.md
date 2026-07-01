@@ -130,7 +130,7 @@ git commit -s -m "docs: update quickstart with new model"
 
 - `.env` files (secrets)
 - `.opencode/opencode.json` (LiteMaaS API key)
-- `target-repo/` or `.autofix/` (eval/agent runtime artifacts)
+- `work/` or `.autofix/` (eval/agent runtime artifacts)
 - `__pycache__/` or `*.pyc`
 - Large binary files or model weights
 

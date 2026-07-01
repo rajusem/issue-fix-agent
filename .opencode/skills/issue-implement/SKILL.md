@@ -98,14 +98,19 @@ curl -s -X PUT "https://$JIRA_SITE/rest/api/3/issue/<KEY>" \
    ```
 
    **If `true`:** The fix branch is on the FORK, not upstream. Compute
-   the fork URL from the upstream URL:
+   the fork URL and save upstream details for Phase 10 PR creation:
    ```bash
    FORK_OWNER=$(gh api user --jq .login)
-   REPO_NAME=$(basename "<repo_url>")   # e.g., "obs-mcp"
+   UPSTREAM_URL="<repo_url>"
+   UPSTREAM_OWNER=$(echo "$UPSTREAM_URL" | sed 's|.*/\([^/]*\)/[^/]*$|\1|')
+   REPO_NAME=$(basename "$UPSTREAM_URL")
    git clone --depth=50 --branch <fix-branch> \
      "https://github.com/$FORK_OWNER/$REPO_NAME" work && cd work
-   git remote add upstream <repo_url>   # upstream is read-only
+   git remote add upstream "$UPSTREAM_URL"
    ```
+   **IMPORTANT**: Save `FORK_OWNER`, `UPSTREAM_OWNER`, and `REPO_NAME`
+   — you MUST use them in Phase 10 to create the cross-repo PR with
+   `--repo "$UPSTREAM_OWNER/$REPO_NAME" --head "$FORK_OWNER:$BRANCH"`.
 
 7. Harden git config:
    ```bash
@@ -314,9 +319,13 @@ Replace `<model version>` with the model reported by the runtime.
      ```
      Log to Jira: "Updated existing PR #$EXISTING_PR on branch $BRANCH."
    - If no open PR exists: create a new PR (proceed to step 4).
-4. Create PR. Check `${FORK_MODE:-false}`:
+4. Create PR. **STOP and check `FORK_MODE` before running `gh pr create`.**
+   If you cloned from a fork in Phase 5 (i.e., `git remote -v` shows
+   `upstream` pointing to a different org than `origin`), you MUST use
+   the fork-mode PR creation below. Creating a PR without `--repo` and
+   `--head` will target the FORK instead of upstream — this is WRONG.
 
-   **If `false` (default):**
+   **If `FORK_MODE=false` (default):**
    ```bash
    gh pr create \
      --title "fix(<component>): <summary>" \
@@ -346,11 +355,13 @@ Replace `<model version>` with the model reported by the runtime.
    )"
    ```
 
-   **If `true` (fork mode):** Create cross-repo PR from fork to upstream:
+   **If `FORK_MODE=true`:** Create cross-repo PR from fork → upstream.
+   Use the variables saved in Phase 5 (`FORK_OWNER`, `UPSTREAM_OWNER`,
+   `REPO_NAME`). If not set, recompute them now:
    ```bash
-   FORK_OWNER=$(gh api user --jq .login)
-   UPSTREAM_OWNER=$(basename "$(dirname "<repo_url>")")
-   REPO_NAME=$(basename "<repo_url>")
+   FORK_OWNER="${FORK_OWNER:-$(gh api user --jq .login)}"
+   UPSTREAM_OWNER="${UPSTREAM_OWNER:-$(git remote get-url upstream | sed 's|.*/\([^/]*\)/[^/]*$|\1|')}"
+   REPO_NAME="${REPO_NAME:-$(basename "$(git remote get-url upstream)")}"
    gh pr create \
      --repo "$UPSTREAM_OWNER/$REPO_NAME" \
      --head "$FORK_OWNER:$BRANCH" \
@@ -381,6 +392,15 @@ Replace `<model version>` with the model reported by the runtime.
    EOF
    )"
    ```
+
+4.5. **Verify PR target** (FORK_MODE=true only): After PR creation,
+   confirm the PR was created on the UPSTREAM repo, not the fork:
+   ```bash
+   PR_REPO=$(gh pr view --json url --jq '.url' | sed 's|https://github.com/||' | cut -d/ -f1-2)
+   ```
+   If `$PR_REPO` equals `$FORK_OWNER/$REPO_NAME` (fork, not upstream),
+   the PR was created on the wrong repo. Close it and recreate with
+   `--repo "$UPSTREAM_OWNER/$REPO_NAME"`.
 
 ## Phase 11: Update Jira
 

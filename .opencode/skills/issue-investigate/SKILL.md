@@ -868,7 +868,7 @@ For each validated MAJOR/CRITICAL finding:
 
 Increment plan version (v1 → v2). Save to `.audit/approved-plan.md`.
 
-Post to Jira (wiki markup):
+Post to Jira:
 ```
 ## Fix Plan (vN — Iteration N Revision)
 **Findings Addressed**: X MAJOR, Y gaps noted

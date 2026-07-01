@@ -32,7 +32,7 @@ autofix (permanent)
                                                                      bot-fix-failed → bot-in-progress (retry, max 2)
 
 no-autofix — opt-out: ticket excluded from automation while keeping autofix label
-bot-plan-ready — plan approved by audit sub-agents, awaiting human review (PLAN_APPROVAL_REQUIRED=true)
+bot-plan-ready — plan approved by audit sub-agents, awaiting human review
 bot-plan-approved — human adds to authorize implementation after reviewing the plan
 bot-retry — user adds to bot-fix-failed ticket to trigger re-processing (max 2 retries)
 bot-cancelled — human override: stops active sessions, moves to bot-fix-failed
@@ -54,7 +54,7 @@ All Jira operations use the `mcp-atlassian` MCP server:
 - `atlassian_jira_add_comment` — add comments
 - `atlassian_jira_transition_issue` — status transitions
 
-If `editJiraIssue` is unavailable for labels, fall back to `curl` with
+If `atlassian_jira_update_issue` is unavailable for labels, fall back to `curl` with
 Basic Auth using `$JIRA_USERNAME` / `$JIRA_API_TOKEN`.
 
 ## Cross-Workflow Contracts

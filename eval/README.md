@@ -98,7 +98,7 @@ script -q /tmp/eval-implement-<TICKET>.log \
 **Notes:**
 - `--dangerously-skip-permissions` is eval-only — bypasses all permission prompts for unattended runs
 - `script -q` provides PTY wrapper needed for OpenCode's non-interactive mode
-- Clean up `target-repo/` between runs: `rm -rf target-repo/`
+- Clean up cloned repos between runs: `rm -rf work/`
 
 ---
 
@@ -117,19 +117,63 @@ Parent Story: [OBSINTA-1325](https://stage-redhat.atlassian.net/browse/OBSINTA-1
 | LEADS-230 | [1355](https://stage-redhat.atlassian.net/browse/OBSINTA-1355) | [1356](https://stage-redhat.atlassian.net/browse/OBSINTA-1356) | [1357](https://stage-redhat.atlassian.net/browse/OBSINTA-1357) | [1358](https://stage-redhat.atlassian.net/browse/OBSINTA-1358) | [1359](https://stage-redhat.atlassian.net/browse/OBSINTA-1359) | [1360](https://stage-redhat.atlassian.net/browse/OBSINTA-1360) | [1361](https://stage-redhat.atlassian.net/browse/OBSINTA-1361) |
 | OBSINTA-1329 | [1362](https://stage-redhat.atlassian.net/browse/OBSINTA-1362) | [1363](https://stage-redhat.atlassian.net/browse/OBSINTA-1363) | [1364](https://stage-redhat.atlassian.net/browse/OBSINTA-1364) | [1365](https://stage-redhat.atlassian.net/browse/OBSINTA-1365) | [1366](https://stage-redhat.atlassian.net/browse/OBSINTA-1366) | [1367](https://stage-redhat.atlassian.net/browse/OBSINTA-1367) | [1368](https://stage-redhat.atlassian.net/browse/OBSINTA-1368) |
 
-### Summary Dashboard
+### Summary Dashboard — Verdict Matrix
 
-| Issue | Qwen 3.6 35B | Qwen3-Coder 30B | Opus 4.6 | Sonnet 4.6 | Gemma4 31B | MiniMax M2.5 | DeepSeek R1 32B |
+| Issue (Difficulty) | Opus 4.6 | Sonnet 4.6 | MiniMax M2.5 | DeepSeek R1 | Qwen 3.6 | Qwen3-Coder | Gemma4 |
 |-------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| OBSINTA-1176 | FAIL | FAIL | **PASS** | **PASS** | FAIL | **PASS** | FAIL |
-| ACM-35375 | PARTIAL | FAIL | **PASS** | **PASS** | FAIL | PARTIAL | PARTIAL |
-| OCPBUGS-45921 | FAIL | FAIL | **PASS** | **PASS** | PARTIAL | FAIL | FAIL |
-| LEADS-205 | PARTIAL | FAIL | **PASS** | **PASS** | FAIL | **PASS** | **PASS** |
-| LEADS-230 | PARTIAL | FAIL | **PASS** | **PASS** | FAIL | PARTIAL | FAIL |
-| OBSINTA-1329 | PARTIAL | FAIL | **PASS** | **PASS** | FAIL | skipped | **PASS** |
-| **Score** | **0/6** | **0/6** | **6/6** | **6/6** | **0/6** | **2/5** | **2/6** |
+| OBSINTA-1176 (Small, Go) | **PASS** | **PASS** | **PASS** | FAIL | FAIL | FAIL | FAIL |
+| ACM-35375 (Hard, Python) | **PASS** | **PASS** | PARTIAL | PARTIAL | PARTIAL | FAIL | FAIL |
+| OCPBUGS-45921 (Easy, 1GB repo) | **PASS** | **PASS** | FAIL | FAIL | FAIL | FAIL | PARTIAL |
+| LEADS-205 (Medium, Python) | **PASS** | **PASS** | **PASS** | **PASS** | PARTIAL | FAIL | FAIL |
+| LEADS-230 (Small, Python) | **PASS** | **PASS** | PARTIAL | FAIL | PARTIAL | FAIL | FAIL |
+| OBSINTA-1329 (Small, Go) | **PASS** | **PASS** | skipped | **PASS** | PARTIAL | FAIL | FAIL |
+| **Score** | **6/6** | **6/6** | **2/5** | **2/6** | **0/6** | **0/6** | **0/6** |
+| **Time range** | 8-17m | 9-63m | 16-134m | 1-6m | 3-31m | 7-312m | 12-60m |
+
+**Legend:** **PASS** = full pipeline (investigate → implement → PR → Jira, fix validated against human PR).
+PARTIAL = investigation succeeded (root cause found, plan posted) but implementation failed.
+FAIL = investigation failed or agent crashed.
+
+### Summary Dashboard — Enriched (per model)
+
+| Metric | Opus 4.6 | Sonnet 4.6 | MiniMax M2.5 | DeepSeek R1 | Qwen 3.6 | Qwen3-Coder | Gemma4 |
+|--------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Provider** | Vertex AI | Vertex AI | Ollama Cloud | Ollama | LiteMaaS | Ollama | Ollama |
+| **Full Pipeline (PASS)** | 6/6 (100%) | 6/6 (100%) | 2/5 (40%) | 2/6 (33%) | 0/6 (0%) | 0/6 (0%) | 0/6 (0%) |
+| **Root Cause Found** | 6/6 (100%) | 6/6 (100%) | 4/5 (80%) | 2/6 (33%) | 4/6 (67%) | 0/6 (0%) | 1/6 (17%) |
+| **Fix Accuracy (PASS runs)** | Exact/equivalent | Exact/equivalent | Equivalent | Equivalent | N/A | N/A | N/A |
+| **Regression Tests Written** | Yes (all runs) | Yes (all runs) | Partial | Partial | N/A | N/A | N/A |
+| **Hallucination** | None observed | None observed | None | None | None | Yes (wrong ticket) | None |
+| **Avg Time (PASS runs)** | ~12 min | ~12 min | ~25 min | ~3 min | N/A | N/A | N/A |
+| **Hard Issue (ACM-35375)** | PASS (3 bugs) | PASS (3 bugs) | PARTIAL | PARTIAL | PARTIAL | FAIL | FAIL |
+| **Large Repo (OCPBUGS-45921)** | PASS | PASS | FAIL (timeout) | FAIL (timeout) | FAIL | FAIL | PARTIAL |
+
+### Capability Breakdown
+
+| Capability | Claude (Opus/Sonnet) | MiniMax / DeepSeek | Qwen 3.6 | Qwen3-Coder / Gemma4 |
+|-----------|:---:|:---:|:---:|:---:|
+| Root cause identification | 12/12 (100%) | 6/11 (55%) | 4/6 (67%) | 1/12 (8%) |
+| Following 300-line skill playbook | All phases complete | Investigation + partial implementation | Investigation only | Fails early |
+| Multi-step tool execution (30+ calls) | No errors | Derails after ~15 calls | Derails after ~10 calls | Derails immediately |
+| Multi-bug complex issues | PASS (ACM-35375: 3 bugs) | PARTIAL (investigation only) | PARTIAL (investigation only) | FAIL |
+| Writing regression tests | Better than human PRs | Partial (when PASS) | Never reaches this phase | Never reaches this phase |
+| Large repo handling (1GB clone) | PASS within 15 min | FAIL (timeout) | FAIL (timeout) | PARTIAL (Gemma4 only) |
+
+### Model Tiers
+
+| Tier | Models | Pass Rate | Recommendation |
+|------|--------|-----------|----------------|
+| **Production** | Claude Opus 4.6, Sonnet 4.6 | 100% (12/12) | All agents — full pipeline |
+| **Limited** | MiniMax M2.5 (40%), DeepSeek R1 (33%) | 33-40% | Simple, well-scoped bugs only |
+| **Investigation only** | Qwen 3.6 35B | 0% full, 67% investigate | Root cause analysis only — no implementation |
+| **Not viable** | Qwen3-Coder 30B, Gemma4 31B | 0% | Too slow or poor instruction following |
 
 ### Detailed Results
+
+> **Status:** Run 1 (calibration) is fully documented below. Remaining
+> runs have verdicts captured in the Summary Dashboard above. Full
+> per-run details are available in the corresponding Jira tickets
+> (see Jira Ticket Map).
 
 Each run captures the following metrics:
 
